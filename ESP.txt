@@ -1,13 +1,13 @@
 local CFG = {
 	BATCH = 0.03, BATCH_SIZE = 25, BATCH_WAIT = 0.25,
-	PARTICLES = 0, PARTICLES_M = 3,
-	MAX_DIST = 200,
-	CULL_DIST = 250,     
-	UPDATE_RATE = 0.08,  
+	PARTICLES = 0, PARTICLES_M = 0,
+	MAX_DIST = 150,
+	CULL_DIST = 180,
+	UPDATE_RATE = 0.12,
 	RAINBOW_SPEED = 0.35,
-	RAINBOW_HZ = 0.12,
+	RAINBOW_HZ = 0.15,
 	DROP = 7, XRAY_Z = -3,
-	ESP_ON = true, NAME_ON = true, HP_ON = true, LINK_ON = true
+	ESP_ON = true, NAME_ON = true, HP_ON = true, LINK_ON = false
 }
 
 local Players = game:GetService("Players")
@@ -88,7 +88,6 @@ local function beamProps(a0, a1, w, tr)
 		Color = ColorSequence.new(rainbowColor), Transparency = NumberSequence.new(tr), Enabled = false }
 end
 
--- drag sin leak (sin conexiones i.Changed acumuladas)
 local function makeDrag(handle, frame)
 	local on = false
 	local p0, f0
@@ -247,7 +246,6 @@ local function makeLink(pl, ch)
 	d.low = N("Attachment", { Name = "KyloroxLow", Position = Vector3.new(0, -CFG.DROP, 0) }, foot)
 	d.footStick = N("Beam", beamProps(d.footAtt, d.low, 0.09, 0.2), hrp)
 	d.link = N("Beam", beamProps(myLow, d.low, 0.07, 0.3), myHrp)
-	-- habilitación la decide el Heartbeat según distancia
 end
 
 local function setupChar(pl, ch)
@@ -256,7 +254,6 @@ local function setupChar(pl, ch)
 	local d = esp[pl]
 	if not d then d = {} esp[pl] = d end
 
-	-- Highlight deshabilitado por default; el loop lo prende si estás cerca
 	d.hl = N("Highlight", { Name = "EK_Highlight", Adornee = ch, DepthMode = Enum.HighlightDepthMode.AlwaysOnTop, FillColor = STYLE.Relleno.Color, FillTransparency = STYLE.Relleno.Transparency, OutlineColor = rainbowColor, OutlineTransparency = STYLE.Borde.Transparency, Enabled = false }, ch)
 	task.wait()
 
@@ -299,7 +296,6 @@ local function refresh()
 	if myStick then myStick.Enabled = linkOn end
 end
 
--- === LOOP PRINCIPAL (culling por distancia + updates sólo si cambian) ===
 local acc = 0
 RunService.Heartbeat:Connect(function(dt)
 	if not running or not gui or not gui.Parent then return end
@@ -337,7 +333,6 @@ RunService.Heartbeat:Connect(function(dt)
 				end
 			end
 
-			-- Toggle de renderizado sólo si difiere (comparación barata)
 			local wantHl = inRange and espOn
 			local wantBeam = inRange and linkOn
 			local wantTag = inRange and (nameOn or hpOn)
@@ -346,7 +341,6 @@ RunService.Heartbeat:Connect(function(dt)
 			if d.link and d.link.Enabled ~= wantBeam then d.link.Enabled = wantBeam end
 			if d.tag and d.tag.Enabled ~= wantTag then d.tag.Enabled = wantTag end
 
-			-- Textos/barras sólo si está en rango y cambió
 			if inRange and hrp and hum and d.dist then
 				if d.lastDist ~= dist then
 					d.lastDist = dist
@@ -379,7 +373,6 @@ RunService.Heartbeat:Connect(function(dt)
 	end
 end)
 
--- === ARCOÍRIS throttleado a ~8 Hz (antes 60+ Hz) ===
 local rAcc = 0
 RunService.Heartbeat:Connect(function(dt)
 	if not running or not gui or not gui.Parent then return end
@@ -614,7 +607,6 @@ pcall(function()
 		end
 	end)
 
-	-- brillitos (0.22s entre cada uno, antes 0.12)
 	task.spawn(function()
 		while guiB.Parent do
 			local startX = math.random(5, 95) / 100
@@ -635,7 +627,6 @@ pcall(function()
 		end
 	end)
 
-	-- flotación
 	task.spawn(function()
 		local baseY = 14
 		while guiB.Parent do
