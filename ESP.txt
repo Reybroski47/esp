@@ -112,6 +112,22 @@ local function hasLineOfSight(from, part, ch)
 	return hit == nil
 end
 
+local function keepOnScreen(frame, w, h)
+	local cam = workspace.CurrentCamera
+	if not cam then return end
+	local vp = cam.ViewportSize
+	local abs = frame.AbsoluteSize
+	local fw = w or abs.X
+	local fh = h or abs.Y
+	if fw <= 0 or fh <= 0 then return end
+	local margin = 4
+	local px = frame.Position.X.Scale * vp.X + frame.Position.X.Offset
+	local py = frame.Position.Y.Scale * vp.Y + frame.Position.Y.Offset
+	local maxX = math.max(margin, vp.X - fw - margin)
+	local maxY = math.max(margin, vp.Y - fh - margin)
+	frame.Position = UDim2.fromOffset(math.clamp(px, margin, maxX), math.clamp(py, margin, maxY))
+end
+
 local function makeDrag(handle, frame)
 	local on = false
 	local p0, f0
@@ -126,6 +142,7 @@ local function makeDrag(handle, frame)
 		if on and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
 			local d = i.Position - p0
 			frame.Position = UDim2.new(f0.X.Scale, f0.X.Offset + d.X, f0.Y.Scale, f0.Y.Offset + d.Y)
+			keepOnScreen(frame)
 		end
 	end)
 	UIS.InputEnded:Connect(function(i)
@@ -609,6 +626,10 @@ local function boot()
 			local s = fitScale()
 			uiScale.Scale = s
 			kScale.Scale = s
+			task.defer(function()
+				keepOnScreen(main, MAIN_SIZE.X.Offset * s, MAIN_SIZE.Y.Offset * s)
+				keepOnScreen(kBtn, 46 * s, 46 * s)
+			end)
 		end)
 	end
 
@@ -651,6 +672,7 @@ local function boot()
 	local function hidePanel()
 		local targetPos = UDim2.new(main.Position.X.Scale, main.Position.X.Offset + 107, main.Position.Y.Scale, main.Position.Y.Offset + 172)
 		kBtn.Position = targetPos
+		keepOnScreen(kBtn, 46 * kScale.Scale, 46 * kScale.Scale)
 		local t = Tween:Create(main, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { Size = UDim2.new(), Position = targetPos, BackgroundTransparency = 1 })
 		t:Play()
 		t.Completed:Connect(function()
@@ -667,6 +689,7 @@ local function boot()
 	local function showPanel()
 		kBtn.Visible = false
 		main.Position = kBtn.Position
+		keepOnScreen(main, MAIN_SIZE.X.Offset * uiScale.Scale, MAIN_SIZE.Y.Offset * uiScale.Scale)
 		main.Size = UDim2.new()
 		main.BackgroundTransparency = 1
 		main.Visible = true
