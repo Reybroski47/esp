@@ -48,11 +48,13 @@ local OFF = Color3.fromRGB(35, 35, 45)
 
 local STYLE = { Relleno = { Color = BLUE, Transparency = 0.35 }, Borde = { Color = WHITE, Transparency = 0.10 } }
 local target = "Relleno"
+local targetMode = "Cabeza"
 local espOn = CFG.ESP_ON
 local nameOn = CFG.NAME_ON
 local hpOn = CFG.HP_ON
 local linkOn = CFG.LINK_ON
-local fovOn = true
+local fovOn = false
+local rmbActive = false
 local fovSize = 400
 local hue = 0
 local rainbowColor = Color3.fromHSV(0, 1, 1)
@@ -134,23 +136,21 @@ local function toggle(text, default, cb)
 	end)
 end
 
-local function selector(cb)
+local function selector(text, options, default, cb)
 	order = order + 1
-	local row = N("Frame", { Size = UDim2.new(1, 0, 0, 30), BackgroundTransparency = 1, ZIndex = 2, LayoutOrder = order }, scroll)
-	N("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, HorizontalAlignment = Enum.HorizontalAlignment.Center, Padding = UDim.new(0, 4) }, row)
+	local row = N("Frame", { Size = UDim2.new(1, 0, 0, 50), BackgroundTransparency = 1, ZIndex = 2, LayoutOrder = order }, scroll)
+	N("TextLabel", { Size = UDim2.new(1, 0, 0, 15), BackgroundTransparency = 1, Text = text, TextColor3 = Color3.fromRGB(210, 210, 220), TextSize = 13, Font = Enum.Font.GothamMedium, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 2 }, row)
+	local btnRow = N("Frame", { Size = UDim2.new(1, 0, 0, 28), Position = UDim2.new(0, 0, 0, 18), BackgroundTransparency = 1, ZIndex = 2 }, row)
+	N("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, HorizontalAlignment = Enum.HorizontalAlignment.Center, Padding = UDim.new(0, 4) }, btnRow)
 	local btns = {}
-	local names = { "Relleno", "Borde" }
-	for _, nm in ipairs(names) do
-		local b = N("TextButton", { Size = UDim2.new(0.48, -2, 1, 0), BackgroundColor3 = OFF, Text = nm, TextColor3 = WHITE, TextSize = 11, Font = Enum.Font.GothamBold, ZIndex = 2 }, row)
-		if nm == target then b.BackgroundColor3 = Color3.fromRGB(60, 90, 200) end
+	for _, nm in ipairs(options) do
+		local b = N("TextButton", { Size = UDim2.new(0.5, -2, 1, 0), BackgroundColor3 = OFF, Text = nm, TextColor3 = WHITE, TextSize = 11, Font = Enum.Font.GothamBold, ZIndex = 2 }, btnRow)
+		if nm == default then b.BackgroundColor3 = Color3.fromRGB(60, 90, 200) end
 		N("UICorner", { CornerRadius = UDim.new(0, 6) }, b)
 		b.MouseButton1Click:Connect(function()
-			target = nm
-			for _, v in pairs(btns) do
-				v.BackgroundColor3 = OFF
-			end
+			for _, v in pairs(btns) do v.BackgroundColor3 = OFF end
 			b.BackgroundColor3 = Color3.fromRGB(60, 90, 200)
-			cb()
+			cb(nm)
 		end)
 		btns[nm] = b
 	end
@@ -237,7 +237,15 @@ local function setupChar(pl, ch)
 	d.hl = N("Highlight", { Name = "EK_Highlight", Adornee = ch, DepthMode = Enum.HighlightDepthMode.AlwaysOnTop, FillColor = STYLE.Relleno.Color, FillTransparency = STYLE.Relleno.Transparency, OutlineColor = rainbowColor, OutlineTransparency = STYLE.Borde.Transparency, Enabled = false }, ch)
 	task.wait()
 
-	d.tag = N("BillboardGui", { Name = "EK_Tag", Size = UDim2.new(0, 160, 0, 48), StudsOffsetWorldSpace = Vector3.new(0, 3.4, 0), AlwaysOnTop = true, LightInfluence = false, MaxDistance = CFG.MAX_DIST, Adornee = hrp, Enabled = false }, hrp)
+	local targetPart = hrp
+	if targetMode == "Cabeza" and ch:FindFirstChild("Head") then
+		targetPart = ch.Head
+		d.tagOffset = Vector3.new(0, 1.5, 0)
+	else
+		d.tagOffset = Vector3.new(0, 3.4, 0)
+	end
+
+	d.tag = N("BillboardGui", { Name = "EK_Tag", Size = UDim2.new(0, 160, 0, 48), StudsOffsetWorldSpace = d.tagOffset, AlwaysOnTop = true, LightInfluence = false, MaxDistance = CFG.MAX_DIST, Adornee = targetPart, Enabled = false }, targetPart)
 	d.name = N("TextLabel", { Size = UDim2.new(1, 0, 0, 18), BackgroundTransparency = 1, Text = pl.Name, TextColor3 = WHITE, TextStrokeColor3 = Color3.new(0, 0, 0), TextStrokeTransparency = 0.4, Font = Enum.Font.GothamBold, TextSize = 14, Visible = nameOn }, d.tag)
 	d.dist = N("TextLabel", { Size = UDim2.new(1, 0, 0, 14), Position = UDim2.new(0, 0, 0, 18), BackgroundTransparency = 1, Text = "0 studs", TextColor3 = BLUE, TextStrokeColor3 = Color3.new(0, 0, 0), TextStrokeTransparency = 0.4, Font = Enum.Font.GothamMedium, TextSize = 12, Visible = nameOn }, d.tag)
 
@@ -303,17 +311,22 @@ RunService.Heartbeat:Connect(function(dt)
 			local inRange = false
 			local dist = 0
 			if hrp and cam then
-				local dx = hrp.Position.X - camPos.X
-				local dy = hrp.Position.Y - camPos.Y
-				local dz = hrp.Position.Z - camPos.Z
+				local targetPart = hrp
+				if targetMode == "Cabeza" and ch:FindFirstChild("Head") then
+					targetPart = ch.Head
+				end
+
+				local dx = targetPart.Position.X - camPos.X
+				local dy = targetPart.Position.Y - camPos.Y
+				local dz = targetPart.Position.Z - camPos.Z
 				local distSq = dx*dx + dy*dy + dz*dz
 
 				if distSq <= cullSq then
 					inRange = true
 					dist = math.floor(math.sqrt(distSq))
 
-					if fovOn then
-						local screenPos, onScreen = cam:WorldToViewportPoint(hrp.Position)
+					if fovOn or rmbActive then
+						local screenPos, onScreen = cam:WorldToViewportPoint(targetPart.Position)
 						if onScreen then
 							local screenCenter = Vector2.new(cam.ViewportSize.X / 2, cam.ViewportSize.Y / 2)
 							local playerScreenPos = Vector2.new(screenPos.X, screenPos.Y)
@@ -388,7 +401,20 @@ RunService.Heartbeat:Connect(function(dt)
 	if kStroke then kStroke.Color = rainbowColor end
 	if kBtn then kBtn.TextColor3 = rainbowColor end
 	if bannerStroke then bannerStroke.Color = rainbowColor end
-	if fovStroke and fovOn then fovStroke.Color = rainbowColor end
+	if fovStroke and (fovOn or rmbActive) then fovStroke.Color = rainbowColor end
+end)
+
+UIS.InputBegan:Connect(function(input, gameProcessed)
+	if not gameProcessed and input.UserInputType == Enum.UserInputType.MouseButton2 then
+		rmbActive = true
+		if fovCircle then fovCircle.Visible = true end
+	end
+end)
+UIS.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton2 then
+		rmbActive = false
+		if fovCircle then fovCircle.Visible = fovOn end
+	end
 end)
 
 local function boot()
@@ -400,6 +426,7 @@ local function boot()
 		Size = UDim2.new(0, fovSize, 0, fovSize),
 		Position = UDim2.new(0.5, -(fovSize/2), 0.5, -(fovSize/2)),
 		BackgroundTransparency = 1,
+		Visible = fovOn or rmbActive,
 		ZIndex = 1
 	}, gui)
 	local fovCorner = Instance.new("UICorner")
@@ -407,15 +434,19 @@ local function boot()
 	fovCorner.Parent = fovCircle
 	fovStroke = N("UIStroke", { Color = rainbowColor, Thickness = 1.5, Transparency = 0.6 }, fovCircle)
 
-	local MAIN_SIZE = UDim2.new(0, 260, 0, 350)
-	local MAIN_POS = UDim2.new(0.5, -130, 0.5, -175)
+	local MAIN_SIZE = UDim2.new(0, 260, 0, 390)
+	local MAIN_POS = UDim2.new(0.5, -130, 0.5, -195)
 
 	main = N("Frame", { Name = "MainFrame", Size = UDim2.new(), Position = UDim2.new(0.5, 0, 0.5, 0), BackgroundColor3 = Color3.fromRGB(22, 22, 26), BackgroundTransparency = 0.15, BorderSizePixel = 0, ClipsDescendants = true, Active = true }, gui)
 	N("UICorner", { CornerRadius = UDim.new(0, 18) }, main)
 	N("UIStroke", { Color = BLUE, Thickness = 1.5, Transparency = 0.2 }, main)
 
+	local uiScale = Instance.new("UIScale")
+	uiScale.Scale = UIS.TouchEnabled and 0.85 or 1
+	uiScale.Parent = main
+
 	local header = N("Frame", { Size = UDim2.new(1, 0, 0, 40), BackgroundTransparency = 1, ZIndex = 2 }, main)
-	N("TextLabel", { Size = UDim2.new(1, -70, 1, 0), Position = UDim2.new(0, 15, 0, 0), BackgroundTransparency = 1, Text = "Kylorox ESP", TextColor3 = WHITE, TextSize = 14, Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 2 }, header)
+	N("TextLabel", { Size = UDim2.new(1, -70, 1, 0), Position = UDim2.new(0, 15, 0, 0), BackgroundTransparency = 1, Text = "Kylorox", TextColor3 = WHITE, TextSize = 14, Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 2 }, header)
 	local minBtn = N("TextButton", { Size = UDim2.new(0, 26, 0, 26), Position = UDim2.new(1, -65, 0, 7), BackgroundColor3 = Color3.fromRGB(35, 35, 42), Text = "-", TextColor3 = Color3.fromRGB(200, 200, 200), TextSize = 12, Font = Enum.Font.GothamBold, ZIndex = 2 }, header)
 	round(minBtn)
 	local closeBtn = N("TextButton", { Size = UDim2.new(0, 26, 0, 26), Position = UDim2.new(1, -33, 0, 7), BackgroundColor3 = RED, Text = "X", TextColor3 = WHITE, TextSize = 12, Font = Enum.Font.GothamBold, ZIndex = 2 }, header)
@@ -424,7 +455,7 @@ local function boot()
 	log("header ok")
 
 	scroll = N("ScrollingFrame", { Size = UDim2.new(1, -20, 1, -45), Position = UDim2.new(0, 10, 0, 40), BackgroundTransparency = 1, ScrollBarThickness = 3, ScrollBarImageColor3 = Color3.fromRGB(80, 80, 95), AutomaticCanvasSize = Enum.AutomaticSize.Y, CanvasSize = UDim2.new(), ZIndex = 2 }, main)
-	N("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 12) }, scroll)
+	N("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 10) }, scroll)
 	N("UIPadding", { PaddingTop = UDim.new(0, 5), PaddingBottom = UDim.new(0, 20), PaddingLeft = UDim.new(0, 5), PaddingRight = UDim.new(0, 10) }, scroll)
 	log("scroll ok")
 
@@ -434,15 +465,32 @@ local function boot()
 	toggle("Nombre + Distancia", CFG.NAME_ON, function(v) nameOn = v refresh() end)
 	toggle("Barra de Vida", CFG.HP_ON, function(v) hpOn = v refresh() end)
 	toggle("Palitos / Red", CFG.LINK_ON, function(v) linkOn = v refresh() end)
-
-	toggle("Activar FOV (Filtro)", true, function(v)
+	toggle("Filtro FOV (Siempre)", false, function(v)
 		fovOn = v
-		if fovCircle then fovCircle.Visible = fovOn end
+		if fovCircle then fovCircle.Visible = fovOn or rmbActive end
+	end)
+
+	selector("A que apuntar?", {"Cabeza", "Torso"}, targetMode, function(v)
+		targetMode = v
+		local pls = {}
+		for pl in pairs(esp) do pls[#pls + 1] = pl end
+		for _, pl in ipairs(pls) do
+			local d = esp[pl]
+			if d then
+				if d.tag then d.tag:Destroy() end
+				if d.hl then d.hl:Destroy() end
+			end
+			if pl.Character then setupChar(pl, pl.Character) end
+		end
 	end)
 	log("toggles ok")
 
 	local sldSet
-	selector(function() if sldSet then sldSet(STYLE[target].Transparency) end refresh() end)
+	selector("Estilo de Caja", {"Relleno", "Borde"}, target, function(v)
+		target = v
+		if sldSet then sldSet(STYLE[target].Transparency) end
+		refresh()
+	end)
 	sldSet = slider("Transparencia", function(v) STYLE[target].Transparency = v refresh() end)
 	sldSet(STYLE[target].Transparency)
 
@@ -453,16 +501,20 @@ local function boot()
 			fovCircle.Position = UDim2.new(0.5, -(fovSize/2), 0.5, -(fovSize/2))
 		end
 	end)
-	fovSlider(400 / 700)
+	fovSlider((400 - 100) / 700)
 	log("controles ok")
 
 	mini = N("Frame", { Size = UDim2.new(0, 140, 0, 40), Position = UDim2.new(0.5, -70, 0.05, 0), BackgroundColor3 = Color3.fromRGB(22, 22, 26), BackgroundTransparency = 0.15, Visible = false, ClipsDescendants = true, Active = true }, gui)
 	N("UICorner", { CornerRadius = UDim.new(0, 16) }, mini)
 	N("UIStroke", { Color = BLUE, Thickness = 1.5, Transparency = 0.2 }, mini)
-	N("TextLabel", { Size = UDim2.new(1, -40, 1, 0), Position = UDim2.new(0, 15, 0, 0), BackgroundTransparency = 1, Text = "Kylorox ESP", TextColor3 = WHITE, TextSize = 13, Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 2 }, mini)
+	N("TextLabel", { Size = UDim2.new(1, -40, 1, 0), Position = UDim2.new(0, 15, 0, 0), BackgroundTransparency = 1, Text = "Kylorox", TextColor3 = WHITE, TextSize = 13, Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 2 }, mini)
 	local maxBtn = N("TextButton", { Size = UDim2.new(0, 26, 0, 26), Position = UDim2.new(1, -32, 0.5, -13), BackgroundColor3 = Color3.fromRGB(40, 40, 50), Text = "[]", TextColor3 = WHITE, TextSize = 12, Font = Enum.Font.GothamBold, ZIndex = 2 }, mini)
 	round(maxBtn)
 	makeDrag(mini, mini)
+
+	local miniScale = Instance.new("UIScale")
+	miniScale.Scale = UIS.TouchEnabled and 0.85 or 1
+	miniScale.Parent = mini
 
 	kBtn = N("TextButton", { Name = "KyloroxK", Size = UDim2.new(0, 46, 0, 46), Position = UDim2.new(0.5, -23, 0.5, -23), BackgroundColor3 = Color3.fromRGB(22, 22, 26), BackgroundTransparency = 0.1, Text = "K", TextColor3 = BLUE, TextSize = 20, Font = Enum.Font.GothamBold, Visible = false, ZIndex = 10 }, gui)
 	round(kBtn)
@@ -505,7 +557,7 @@ local function boot()
 	end)
 
 	minBtn.MouseButton1Click:Connect(function()
-		local t = Tween:Create(main, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { Size = UDim2.new(), Position = UDim2.new(main.Position.X.Scale, main.Position.X.Offset + 130, main.Position.Y.Scale, main.Position.Y.Offset + 175) })
+		local t = Tween:Create(main, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { Size = UDim2.new(), Position = UDim2.new(main.Position.X.Scale, main.Position.X.Offset + 130, main.Position.Y.Scale, main.Position.Y.Offset + 195) })
 		t:Play()
 		t.Completed:Connect(function()
 			main.Visible = false
@@ -530,7 +582,7 @@ local function boot()
 	end)
 
 	closeBtn.MouseButton1Click:Connect(function()
-		local targetPos = UDim2.new(main.Position.X.Scale, main.Position.X.Offset + 107, main.Position.Y.Scale, main.Position.Y.Offset + 152)
+		local targetPos = UDim2.new(main.Position.X.Scale, main.Position.X.Offset + 107, main.Position.Y.Scale, main.Position.Y.Offset + 172)
 		kBtn.Position = targetPos
 		local t = Tween:Create(main, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { Size = UDim2.new(), Position = targetPos })
 		t:Play()
