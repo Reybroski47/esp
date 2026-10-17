@@ -424,7 +424,25 @@ RunService.Heartbeat:Connect(function(dt)
 	local cullDist = CFG.CULL_DIST
 	local cullSq = cullDist * cullDist
 	local pickScore = nil
-	aimPick = nil
+	local locked = aimPick
+	local lockOk = false
+	if locked and cam and locked.Parent then
+		local lockHum = locked.Parent:FindFirstChildOfClass("Humanoid")
+		local lx = locked.Position.X - camPos.X
+		local ly = locked.Position.Y - camPos.Y
+		local lz = locked.Position.Z - camPos.Z
+		if lockHum and lockHum.Health > 0 and (lx*lx + ly*ly + lz*lz) <= cullSq then
+			local sp, onScreen = cam:WorldToViewportPoint(locked.Position)
+			if onScreen then
+				local sc = Vector2.new(cam.ViewportSize.X / 2, cam.ViewportSize.Y / 2)
+				local sd = (Vector2.new(sp.X, sp.Y) - sc).Magnitude
+				if (not fovOn or sd <= (fovSize / 2)) and (not aimLos or hasLineOfSight(camPos, locked, locked.Parent)) then
+					lockOk = true
+				end
+			end
+		end
+	end
+	aimPick = lockOk and locked or nil
 
 	for pl, d in pairs(esp) do
 		if not pl.Parent then
@@ -468,7 +486,7 @@ RunService.Heartbeat:Connect(function(dt)
 						end
 					end
 
-					if rmbActive and fovOn and inRange and screenDist and hum and hum.Health > 0
+					if not lockOk and rmbActive and fovOn and inRange and screenDist and hum and hum.Health > 0
 						and (not pickScore or screenDist < pickScore)
 						and (not aimLos or hasLineOfSight(camPos, targetPart, ch)) then
 						pickScore = screenDist
@@ -656,12 +674,14 @@ local function boot()
 	toggle("lines", CFG.LINK_ON, function(v) linkOn = v refresh() end)
 	setFov = toggle("fov", fovOn, function(v)
 		fovOn = v
+		if not v then aimPick = nil end
 		if fovCircle then fovCircle.Visible = fovOn end
 	end)
 	toggle("los", CFG.AIM_LOS, function(v) aimLos = v end)
 
 	selector("mode", {"head", "torso"}, targetMode, function(v)
 		targetMode = v
+		aimPick = nil
 		local pls = {}
 		for pl in pairs(esp) do pls[#pls + 1] = pl end
 		for _, pl in ipairs(pls) do
