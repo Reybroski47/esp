@@ -1,12 +1,11 @@
-
 local CFG = {
 	BATCH = 0.03, BATCH_SIZE = 25, BATCH_WAIT = 0.25,
 	PARTICLES = 0, PARTICLES_M = 3,
-	MAX_DIST = 200,      -
+	MAX_DIST = 200,
 	CULL_DIST = 250,     
 	UPDATE_RATE = 0.08,  
 	RAINBOW_SPEED = 0.35,
-	RAINBOW_HZ = 0.12,   -- arcoíris ~8 Hz (antes 60+ Hz)  <-- clave del lag
+	RAINBOW_HZ = 0.12,
 	DROP = 7, XRAY_Z = -3,
 	ESP_ON = true, NAME_ON = true, HP_ON = true, LINK_ON = true
 }
