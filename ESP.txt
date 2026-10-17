@@ -4,7 +4,7 @@ local CFG = {
 	MAX_DIST = 150,
 	CULL_DIST = 180,
 	UPDATE_RATE = 0.12,
-	AIM_ON = true, AIM_SPEED = 8,
+	AIM_SPEED = 8,
 	AIM_LOS = true,
 	RAINBOW_SPEED = 0.35,
 	RAINBOW_HZ = 0.15,
@@ -48,16 +48,15 @@ local RED = Color3.fromRGB(220, 60, 60)
 local GREY = Color3.fromRGB(45, 45, 55)
 local OFF = Color3.fromRGB(35, 35, 45)
 
-local STYLE = { Relleno = { Color = BLUE, Transparency = 0.35 }, Borde = { Color = WHITE, Transparency = 0.10 } }
-local target = "Relleno"
-local targetMode = "Cabeza"
+local STYLE = { fill = { Color = BLUE, Transparency = 0.35 }, border = { Color = WHITE, Transparency = 0.10 } }
+local target = "fill"
+local targetMode = "head"
 local espOn = CFG.ESP_ON
 local nameOn = CFG.NAME_ON
 local hpOn = CFG.HP_ON
 local linkOn = CFG.LINK_ON
 local fovOn = false
 local rmbActive = false
-local aimOn = CFG.AIM_ON
 local aimSpeed = CFG.AIM_SPEED
 local aimLos = CFG.AIM_LOS
 local aimPick = nil
@@ -152,10 +151,68 @@ local function makeDrag(handle, frame)
 	end)
 end
 
-local function toggle(text, default, cb)
+local I18N = {
+	es = {
+		esp = "ESP Visual",
+		name = "Nombre + Distancia",
+		hp = "Barra de Vida",
+		lines = "Líneas entre personas",
+		fov = "FOV / Aimbot",
+		los = "Solo con visión (LOS)",
+		mode = "¿A qué apuntar?",
+		head = "Cabeza",
+		torso = "Torso",
+		style = "Estilo de Caja",
+		fill = "Relleno",
+		border = "Borde",
+		alpha = "Transparencia",
+		fovSize = "Tamaño del FOV",
+		smooth = "Suavidad del Aimbot",
+		keys = "Atajos de teclado",
+		kFov = "Ctrl + H   Mostrar / ocultar FOV",
+		kStyle = "Ctrl + J   Relleno / Borde",
+		kPanel = "Ctrl + X   Cerrar / abrir panel",
+	},
+	en = {
+		esp = "ESP Visual",
+		name = "Name + Distance",
+		hp = "Health Bar",
+		lines = "Lines between players",
+		fov = "FOV / Aimbot",
+		los = "Line of sight only",
+		mode = "Aim at?",
+		head = "Head",
+		torso = "Torso",
+		style = "Box style",
+		fill = "Fill",
+		border = "Border",
+		alpha = "Transparency",
+		fovSize = "FOV size",
+		smooth = "Aimbot smoothness",
+		keys = "Keyboard shortcuts",
+		kFov = "Ctrl + H   Show / hide FOV",
+		kStyle = "Ctrl + J   Fill / Border",
+		kPanel = "Ctrl + X   Close / open panel",
+	},
+}
+local lang = "es"
+local translatable = {}
+
+local function T(key)
+	local pack = I18N[lang] or I18N.es
+	return pack[key] or key
+end
+
+local function applyLang()
+	for _, fn in ipairs(translatable) do
+		fn()
+	end
+end
+
+local function toggle(key, default, cb)
 	order = order + 1
 	local row = N("Frame", { Size = UDim2.new(1, 0, 0, 28), BackgroundTransparency = 1, ZIndex = 2, LayoutOrder = order }, scroll)
-	local lbl = N("TextLabel", { Size = UDim2.new(1, -50, 1, 0), BackgroundTransparency = 1, Text = text, TextColor3 = Color3.fromRGB(210, 210, 220), TextSize = 13, Font = Enum.Font.GothamMedium, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 2 }, row)
+	local lbl = N("TextLabel", { Size = UDim2.new(1, -50, 1, 0), BackgroundTransparency = 1, Text = T(key), TextColor3 = Color3.fromRGB(210, 210, 220), TextSize = 13, Font = Enum.Font.GothamMedium, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 2 }, row)
 	local onPos = UDim2.new(1, -19, 0.5, -8)
 	local offPos = UDim2.new(0, 3, 0.5, -8)
 	local bg = N("TextButton", { Size = UDim2.new(0, 42, 0, 22), Position = UDim2.new(1, -42, 0.5, -11), BackgroundColor3 = default and GREEN or GREY, Text = "", AutoButtonColor = false, ZIndex = 2 }, row)
@@ -163,6 +220,7 @@ local function toggle(text, default, cb)
 	local knob = N("Frame", { Size = UDim2.new(0, 16, 0, 16), Position = default and onPos or offPos, BackgroundColor3 = WHITE, ZIndex = 2 }, bg)
 	round(knob)
 	local st = default
+	translatable[#translatable + 1] = function() lbl.Text = T(key) end
 	local function apply(v)
 		st = v
 		Tween:Create(knob, TweenInfo.new(0.28, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Position = st and onPos or offPos }):Play()
@@ -183,20 +241,24 @@ local function toggle(text, default, cb)
 	return apply
 end
 
-local function selector(text, options, default, cb)
+local function selector(key, options, default, cb)
 	order = order + 1
 	local row = N("Frame", { Size = UDim2.new(1, 0, 0, 50), BackgroundTransparency = 1, ZIndex = 2, LayoutOrder = order }, scroll)
-	N("TextLabel", { Size = UDim2.new(1, 0, 0, 15), BackgroundTransparency = 1, Text = text, TextColor3 = Color3.fromRGB(210, 210, 220), TextSize = 13, Font = Enum.Font.GothamMedium, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 2 }, row)
+	local lbl = N("TextLabel", { Size = UDim2.new(1, 0, 0, 15), BackgroundTransparency = 1, Text = T(key), TextColor3 = Color3.fromRGB(210, 210, 220), TextSize = 13, Font = Enum.Font.GothamMedium, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 2 }, row)
 	local btnRow = N("Frame", { Size = UDim2.new(1, 0, 0, 28), Position = UDim2.new(0, 0, 0, 18), BackgroundTransparency = 1, ZIndex = 2 }, row)
 	N("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, HorizontalAlignment = Enum.HorizontalAlignment.Center, Padding = UDim.new(0, 4) }, btnRow)
 	local btns = {}
+	translatable[#translatable + 1] = function()
+		lbl.Text = T(key)
+		for nm, b in pairs(btns) do b.Text = T(nm) end
+	end
 	local function pick(nm)
 		for _, v in pairs(btns) do v.BackgroundColor3 = OFF end
 		if btns[nm] then btns[nm].BackgroundColor3 = Color3.fromRGB(60, 90, 200) end
 		if cb then cb(nm) end
 	end
 	for _, nm in ipairs(options) do
-		local b = N("TextButton", { Size = UDim2.new(0.5, -2, 1, 0), BackgroundColor3 = OFF, Text = nm, TextColor3 = WHITE, TextSize = 11, Font = Enum.Font.GothamBold, ZIndex = 2 }, btnRow)
+		local b = N("TextButton", { Size = UDim2.new(0.5, -2, 1, 0), BackgroundColor3 = OFF, Text = T(nm), TextColor3 = WHITE, TextSize = 11, Font = Enum.Font.GothamBold, ZIndex = 2 }, btnRow)
 		if nm == default then b.BackgroundColor3 = Color3.fromRGB(60, 90, 200) end
 		N("UICorner", { CornerRadius = UDim.new(0, 6) }, b)
 		if not UIS.TouchEnabled then
@@ -209,7 +271,7 @@ local function selector(text, options, default, cb)
 	return pick
 end
 
-local function slider(text, cb)
+local function slider(key, cb)
 	order = order + 1
 	local row = N("Frame", { Size = UDim2.new(1, 0, 0, 40), BackgroundTransparency = 1, ZIndex = 2, LayoutOrder = order }, scroll)
 	local lbl = N("TextLabel", { Size = UDim2.new(1, 0, 0, 15), BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(180, 180, 190), TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 2 }, row)
@@ -219,10 +281,15 @@ local function slider(text, cb)
 	round(fill)
 	local knob = N("Frame", { Size = UDim2.new(0, 14, 0, 14), Position = UDim2.new(1, -7, 0.5, -7), BackgroundColor3 = WHITE, ZIndex = 2 }, fill)
 	round(knob)
+	local cur = 0
 	local function set(v)
 		v = math.clamp(v, 0, 1)
+		cur = v
 		fill.Size = UDim2.new(v, 0, 1, 0)
-		lbl.Text = text .. ": " .. string.format("%d", math.floor(v * 100))
+		lbl.Text = T(key) .. ": " .. string.format("%d", math.floor(v * 100))
+	end
+	translatable[#translatable + 1] = function()
+		lbl.Text = T(key) .. ": " .. string.format("%d", math.floor(cur * 100))
 	end
 	local dragging = false
 	local function upd(i)
@@ -250,10 +317,11 @@ local function slider(text, cb)
 	return set
 end
 
-local function label(text, color, size)
+local function label(key, color, size)
 	order = order + 1
 	local row = N("Frame", { Size = UDim2.new(1, 0, 0, 18), BackgroundTransparency = 1, ZIndex = 2, LayoutOrder = order }, scroll)
-	N("TextLabel", { Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, Text = text, TextColor3 = color or Color3.fromRGB(170, 170, 185), TextSize = size or 11, Font = Enum.Font.GothamMedium, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 2 }, row)
+	local lbl = N("TextLabel", { Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, Text = T(key), TextColor3 = color or Color3.fromRGB(170, 170, 185), TextSize = size or 11, Font = Enum.Font.GothamMedium, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 2 }, row)
+	translatable[#translatable + 1] = function() lbl.Text = T(key) end
 end
 
 local function ensureMyRig()
@@ -293,11 +361,11 @@ local function setupChar(pl, ch)
 	local d = esp[pl]
 	if not d then d = {} esp[pl] = d end
 
-	d.hl = N("Highlight", { Name = "EK_Highlight", Adornee = ch, DepthMode = Enum.HighlightDepthMode.AlwaysOnTop, FillColor = STYLE.Relleno.Color, FillTransparency = STYLE.Relleno.Transparency, OutlineColor = rainbowColor, OutlineTransparency = STYLE.Borde.Transparency, Enabled = false }, ch)
+	d.hl = N("Highlight", { Name = "EK_Highlight", Adornee = ch, DepthMode = Enum.HighlightDepthMode.AlwaysOnTop, FillColor = STYLE.fill.Color, FillTransparency = STYLE.fill.Transparency, OutlineColor = rainbowColor, OutlineTransparency = STYLE.border.Transparency, Enabled = false }, ch)
 	task.wait()
 
 	local targetPart = hrp
-	if targetMode == "Cabeza" and ch:FindFirstChild("Head") then
+	if targetMode == "head" and ch:FindFirstChild("Head") then
 		targetPart = ch.Head
 		d.tagOffset = Vector3.new(0, 1.5, 0)
 	else
@@ -331,10 +399,10 @@ end
 local function refresh()
 	for _, d in pairs(esp) do
 		if d.hl then
-			d.hl.FillColor = STYLE.Relleno.Color
-			d.hl.FillTransparency = STYLE.Relleno.Transparency
+			d.hl.FillColor = STYLE.fill.Color
+			d.hl.FillTransparency = STYLE.fill.Transparency
 			d.hl.OutlineColor = rainbowColor
-			d.hl.OutlineTransparency = STYLE.Borde.Transparency
+			d.hl.OutlineTransparency = STYLE.border.Transparency
 		end
 		if d.name then d.name.Visible = nameOn end
 		if d.dist then d.dist.Visible = nameOn end
@@ -374,7 +442,7 @@ RunService.Heartbeat:Connect(function(dt)
 			local screenDist = nil
 			if hrp and cam then
 				local targetPart = hrp
-				if targetMode == "Cabeza" and ch:FindFirstChild("Head") then
+				if targetMode == "head" and ch:FindFirstChild("Head") then
 					targetPart = ch.Head
 				end
 
@@ -400,7 +468,7 @@ RunService.Heartbeat:Connect(function(dt)
 						end
 					end
 
-					if rmbActive and aimOn and inRange and screenDist and hum and hum.Health > 0
+					if rmbActive and fovOn and inRange and screenDist and hum and hum.Health > 0
 						and (not pickScore or screenDist < pickScore)
 						and (not aimLos or hasLineOfSight(camPos, targetPart, ch)) then
 						pickScore = screenDist
@@ -480,7 +548,7 @@ UIS.InputBegan:Connect(function(input, gameProcessed)
 		if input.KeyCode == Enum.KeyCode.H then
 			if setFov then setFov(not fovOn) end
 		elseif input.KeyCode == Enum.KeyCode.J then
-			if setStyle then setStyle(target == "Relleno" and "Borde" or "Relleno") end
+			if setStyle then setStyle(target == "fill" and "border" or "fill") end
 		elseif input.KeyCode == Enum.KeyCode.X then
 			if togglePanel then togglePanel() end
 		end
@@ -496,7 +564,7 @@ end)
 pcall(function() RunService:UnbindFromRenderStep("KyloroxAim") end)
 RunService:BindToRenderStep("KyloroxAim", Enum.RenderPriority.Camera.Value + 1, function(dt)
 	if not running or not gui or not gui.Parent then return end
-	if not (rmbActive and aimOn and aimPick) then return end
+	if not (rmbActive and fovOn and aimPick) then return end
 	local cam = workspace.CurrentCamera
 	local part = aimPick
 	if not cam or not part or not part.Parent then return end
@@ -543,7 +611,29 @@ local function boot()
 	uiScale.Parent = main
 
 	local header = N("Frame", { Size = UDim2.new(1, 0, 0, 40), BackgroundTransparency = 1, ZIndex = 2 }, main)
-	N("TextLabel", { Size = UDim2.new(1, -70, 1, 0), Position = UDim2.new(0, 15, 0, 0), BackgroundTransparency = 1, Text = "Kylorox", TextColor3 = WHITE, TextSize = 14, Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 2 }, header)
+	N("TextLabel", { Size = UDim2.new(1, -108, 1, 0), Position = UDim2.new(0, 15, 0, 0), BackgroundTransparency = 1, Text = "Kylorox", TextColor3 = WHITE, TextSize = 14, Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 2 }, header)
+	local langBtns = {}
+	local setLang
+	local function makeLangBtn(code, posX)
+		local b = N("TextButton", { Size = UDim2.new(0, 28, 0, 26), Position = UDim2.new(1, posX, 0, 7), BackgroundColor3 = Color3.fromRGB(35, 35, 42), Text = string.upper(code), TextColor3 = Color3.fromRGB(220, 220, 230), TextSize = 11, Font = Enum.Font.GothamBold, ZIndex = 3 }, header)
+		round(b)
+		if not UIS.TouchEnabled then
+			b.MouseEnter:Connect(function() Tween:Create(b, TweenInfo.new(0.15), { BackgroundTransparency = 0.2 }):Play() end)
+			b.MouseLeave:Connect(function() Tween:Create(b, TweenInfo.new(0.15), { BackgroundTransparency = 0 }):Play() end)
+		end
+		b.MouseButton1Click:Connect(function() setLang(code) end)
+		langBtns[code] = b
+	end
+	makeLangBtn("es", -97)
+	makeLangBtn("en", -65)
+	setLang = function(code)
+		lang = code
+		applyLang()
+		for c, b in pairs(langBtns) do
+			Tween:Create(b, TweenInfo.new(0.15), { BackgroundColor3 = c == code and Color3.fromRGB(60, 90, 200) or Color3.fromRGB(35, 35, 42) }):Play()
+		end
+	end
+	setLang("es")
 	local closeBtn = N("TextButton", { Size = UDim2.new(0, 26, 0, 26), Position = UDim2.new(1, -33, 0, 7), BackgroundColor3 = RED, Text = "X", TextColor3 = WHITE, TextSize = 12, Font = Enum.Font.GothamBold, ZIndex = 2 }, header)
 	round(closeBtn)
 	if not UIS.TouchEnabled then
@@ -560,18 +650,17 @@ local function boot()
 
 	loadLbl = N("TextLabel", { Size = UDim2.new(1, 0, 0, 18), Position = UDim2.new(0, 0, 1, -22), BackgroundTransparency = 1, Text = "Cargando...", TextColor3 = Color3.fromRGB(150, 150, 160), TextSize = 11, Font = Enum.Font.Gotham }, main)
 
-	toggle("ESP Visual", CFG.ESP_ON, function(v) espOn = v refresh() end)
-	toggle("Nombre + Distancia", CFG.NAME_ON, function(v) nameOn = v refresh() end)
-	toggle("Barra de Vida", CFG.HP_ON, function(v) hpOn = v refresh() end)
-	toggle("Palitos / Red", CFG.LINK_ON, function(v) linkOn = v refresh() end)
-	setFov = toggle("FOV", fovOn, function(v)
+	toggle("esp", CFG.ESP_ON, function(v) espOn = v refresh() end)
+	toggle("name", CFG.NAME_ON, function(v) nameOn = v refresh() end)
+	toggle("hp", CFG.HP_ON, function(v) hpOn = v refresh() end)
+	toggle("lines", CFG.LINK_ON, function(v) linkOn = v refresh() end)
+	setFov = toggle("fov", fovOn, function(v)
 		fovOn = v
 		if fovCircle then fovCircle.Visible = fovOn end
 	end)
-	toggle("Aimbot (Clic Der.)", CFG.AIM_ON, function(v) aimOn = v end)
-	toggle("Solo con visión (LOS)", CFG.AIM_LOS, function(v) aimLos = v end)
+	toggle("los", CFG.AIM_LOS, function(v) aimLos = v end)
 
-	selector("A que apuntar?", {"Cabeza", "Torso"}, targetMode, function(v)
+	selector("mode", {"head", "torso"}, targetMode, function(v)
 		targetMode = v
 		local pls = {}
 		for pl in pairs(esp) do pls[#pls + 1] = pl end
@@ -587,15 +676,15 @@ local function boot()
 	log("toggles ok")
 
 	local sldSet
-	setStyle = selector("Estilo de Caja", {"Relleno", "Borde"}, target, function(v)
+	setStyle = selector("style", {"fill", "border"}, target, function(v)
 		target = v
 		if sldSet then sldSet(STYLE[target].Transparency) end
 		refresh()
 	end)
-	sldSet = slider("Transparencia", function(v) STYLE[target].Transparency = v refresh() end)
+	sldSet = slider("alpha", function(v) STYLE[target].Transparency = v refresh() end)
 	sldSet(STYLE[target].Transparency)
 
-	local fovSlider = slider("Tamaño del FOV", function(v)
+	local fovSlider = slider("fovSize", function(v)
 		fovSize = 100 + (v * 700)
 		if fovCircle then
 			fovCircle.Size = UDim2.new(0, fovSize, 0, fovSize)
@@ -604,13 +693,13 @@ local function boot()
 	end)
 	fovSlider((400 - 100) / 700)
 
-	local aimSlider = slider("Suavidad del Aimbot", function(v) aimSpeed = 1 + (v * 19) end)
+	local aimSlider = slider("smooth", function(v) aimSpeed = 1 + (v * 19) end)
 	aimSlider((CFG.AIM_SPEED - 1) / 19)
 
-	label("Atajos de teclado", Color3.fromRGB(215, 215, 225), 12)
-	label("Ctrl + H   Mostrar / ocultar FOV")
-	label("Ctrl + J   Relleno / Borde")
-	label("Ctrl + X   Cerrar / abrir panel")
+	label("keys", Color3.fromRGB(215, 215, 225), 12)
+	label("kFov")
+	label("kStyle")
+	label("kPanel")
 	log("controles ok")
 
 	kBtn = N("TextButton", { Name = "KyloroxK", Size = UDim2.new(0, 46, 0, 46), Position = UDim2.new(0.5, -23, 0.5, -23), BackgroundColor3 = Color3.fromRGB(22, 22, 26), BackgroundTransparency = 0.1, Text = "K", TextColor3 = BLUE, TextSize = 20, Font = Enum.Font.GothamBold, Visible = false, ZIndex = 10 }, gui)
