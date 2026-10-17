@@ -4,6 +4,7 @@ local CFG = {
 	MAX_DIST = 150,
 	CULL_DIST = 180,
 	UPDATE_RATE = 0.12,
+	AIM_ON = true, AIM_SPEED = 8,
 	RAINBOW_SPEED = 0.35,
 	RAINBOW_HZ = 0.15,
 	DROP = 7, XRAY_Z = -5,
@@ -55,6 +56,9 @@ local hpOn = CFG.HP_ON
 local linkOn = CFG.LINK_ON
 local fovOn = false
 local rmbActive = false
+local aimOn = CFG.AIM_ON
+local aimSpeed = CFG.AIM_SPEED
+local aimPick = nil
 local fovSize = 400
 local hue = 0
 local rainbowColor = Color3.fromHSV(0, 1, 1)
@@ -296,6 +300,8 @@ RunService.Heartbeat:Connect(function(dt)
 	if cam then camPos = cam.CFrame.Position end
 	local cullDist = CFG.CULL_DIST
 	local cullSq = cullDist * cullDist
+	local pickScore = nil
+	aimPick = nil
 
 	for pl, d in pairs(esp) do
 		if not pl.Parent then
@@ -334,6 +340,9 @@ RunService.Heartbeat:Connect(function(dt)
 
 							if distFromCenter > (fovSize / 2) then
 								inRange = false
+							elseif rmbActive and aimOn and hum and hum.Health > 0 and (not pickScore or distFromCenter < pickScore) then
+								pickScore = distFromCenter
+								aimPick = targetPart
 							end
 						else
 							inRange = false
@@ -413,8 +422,22 @@ end)
 UIS.InputEnded:Connect(function(input)
 	if input.UserInputType == Enum.UserInputType.MouseButton2 then
 		rmbActive = false
+		aimPick = nil
 		if fovCircle then fovCircle.Visible = fovOn end
 	end
+end)
+
+pcall(function() RunService:UnbindFromRenderStep("KyloroxAim") end)
+RunService:BindToRenderStep("KyloroxAim", Enum.RenderPriority.Camera.Value + 1, function(dt)
+	if not running or not gui or not gui.Parent then return end
+	if not (rmbActive and aimOn and aimPick) then return end
+	local cam = workspace.CurrentCamera
+	local part = aimPick
+	if not cam or not part or not part.Parent then return end
+	local from = cam.CFrame.Position
+	local to = part.Position
+	if (to - from).Magnitude < 0.1 then return end
+	cam.CFrame = cam.CFrame:Lerp(CFrame.lookAt(from, to), 1 - math.exp(-aimSpeed * dt))
 end)
 
 local function boot()
@@ -469,6 +492,7 @@ local function boot()
 		fovOn = v
 		if fovCircle then fovCircle.Visible = fovOn or rmbActive end
 	end)
+	toggle("Aimbot (Clic Der.)", CFG.AIM_ON, function(v) aimOn = v end)
 
 	selector("A que apuntar?", {"Cabeza", "Torso"}, targetMode, function(v)
 		targetMode = v
@@ -502,6 +526,9 @@ local function boot()
 		end
 	end)
 	fovSlider((400 - 100) / 700)
+
+	local aimSlider = slider("Suavidad del Aimbot", function(v) aimSpeed = 1 + (v * 19) end)
+	aimSlider((CFG.AIM_SPEED - 1) / 19)
 	log("controles ok")
 
 	mini = N("Frame", { Size = UDim2.new(0, 140, 0, 40), Position = UDim2.new(0.5, -70, 0.05, 0), BackgroundColor3 = Color3.fromRGB(22, 22, 26), BackgroundTransparency = 0.15, Visible = false, ClipsDescendants = true, Active = true }, gui)
