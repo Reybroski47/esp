@@ -5,6 +5,7 @@ local CFG = {
 	CULL_DIST = 180,
 	UPDATE_RATE = 0.12,
 	AIM_ON = true, AIM_SPEED = 8,
+	AIM_LOS = true,
 	RAINBOW_SPEED = 0.35,
 	RAINBOW_HZ = 0.15,
 	DROP = 7, XRAY_Z = -5,
@@ -58,6 +59,7 @@ local fovOn = false
 local rmbActive = false
 local aimOn = CFG.AIM_ON
 local aimSpeed = CFG.AIM_SPEED
+local aimLos = CFG.AIM_LOS
 local aimPick = nil
 local fovSize = 400
 local hue = 0
@@ -94,6 +96,19 @@ local function beamProps(a0, a1, w, tr)
 	return { Attachment0 = a0, Attachment1 = a1, Width0 = w, Width1 = w, FaceCamera = true,
 		LightEmission = 1, LightInfluence = 0, ZOffset = CFG.XRAY_Z,
 		Color = ColorSequence.new(rainbowColor), Transparency = NumberSequence.new(tr), Enabled = false }
+end
+
+local losParams = RaycastParams.new()
+losParams.FilterType = Enum.RaycastFilterType.Exclude
+losParams.IgnoreWater = true
+
+local function hasLineOfSight(from, part, ch)
+	local filter = {}
+	if LP.Character then filter[#filter + 1] = LP.Character end
+	if ch then filter[#filter + 1] = ch end
+	losParams.FilterDescendantsInstances = filter
+	local hit = workspace:Raycast(from, part.Position - from, losParams)
+	return hit == nil
 end
 
 local function makeDrag(handle, frame)
@@ -340,7 +355,7 @@ RunService.Heartbeat:Connect(function(dt)
 
 							if distFromCenter > (fovSize / 2) then
 								inRange = false
-							elseif rmbActive and aimOn and hum and hum.Health > 0 and (not pickScore or distFromCenter < pickScore) then
+							elseif rmbActive and aimOn and hum and hum.Health > 0 and (not pickScore or distFromCenter < pickScore) and (not aimLos or hasLineOfSight(camPos, targetPart, ch)) then
 								pickScore = distFromCenter
 								aimPick = targetPart
 							end
@@ -493,6 +508,7 @@ local function boot()
 		if fovCircle then fovCircle.Visible = fovOn or rmbActive end
 	end)
 	toggle("Aimbot (Clic Der.)", CFG.AIM_ON, function(v) aimOn = v end)
+	toggle("Solo con visión (LOS)", CFG.AIM_LOS, function(v) aimLos = v end)
 
 	selector("A que apuntar?", {"Cabeza", "Torso"}, targetMode, function(v)
 		targetMode = v
