@@ -6,7 +6,7 @@ local CFG = {
 	UPDATE_RATE = 0.12,
 	RAINBOW_SPEED = 0.35,
 	RAINBOW_HZ = 0.15,
-	DROP = 7, XRAY_Z = -3,
+	DROP = 7, XRAY_Z = -5,
 	ESP_ON = true, NAME_ON = true, HP_ON = true, LINK_ON = false
 }
 
@@ -52,12 +52,14 @@ local espOn = CFG.ESP_ON
 local nameOn = CFG.NAME_ON
 local hpOn = CFG.HP_ON
 local linkOn = CFG.LINK_ON
+local fovOn = true
+local fovSize = 400
 local hue = 0
 local rainbowColor = Color3.fromHSV(0, 1, 1)
 local esp = {}
 local running = true
 local order = 0
-local gui, main, mini, scroll, loadLbl, kBtn, kStroke, bannerStroke
+local gui, main, mini, scroll, loadLbl, kBtn, kStroke, bannerStroke, fovCircle, fovStroke
 
 local myHrp, myTorsoAtt, myLow, myStick
 
@@ -109,27 +111,6 @@ local function makeDrag(handle, frame)
 			on = false
 		end
 	end)
-end
-
-local function particles(host, n)
-	if n <= 0 then return end
-	local folder = N("Folder", { Name = "BgParticles" }, host)
-	local rng = Random.new()
-	for i = 1, n do
-		local p = N("Frame", { Size = UDim2.new(0, rng:NextInteger(1, 3), 0, rng:NextInteger(4, 10)), BackgroundColor3 = Color3.fromRGB(80, 170, 255), BackgroundTransparency = rng:NextNumber(0.4, 0.8), BorderSizePixel = 0 }, folder)
-		round(p)
-		task.spawn(function()
-			task.wait(rng:NextNumber(0, 3))
-			while p.Parent and running do
-				local x = rng:NextNumber(0.05, 0.95)
-				p.Position = UDim2.new(x, 0, -0.2, 0)
-				local t = Tween:Create(p, TweenInfo.new(rng:NextNumber(2.5, 5), Enum.EasingStyle.Linear), { Position = UDim2.new(x, 0, 1.2, 0) })
-				t:Play()
-				t.Completed:Wait()
-			end
-		end)
-		if i % 4 == 0 then task.wait() end
-	end
 end
 
 local function toggle(text, default, cb)
@@ -188,13 +169,12 @@ local function slider(text, cb)
 	local function set(v)
 		v = math.clamp(v, 0, 1)
 		fill.Size = UDim2.new(v, 0, 1, 0)
-		lbl.Text = text .. " (" .. target .. "): " .. string.format("%.2f", v)
+		lbl.Text = text .. ": " .. string.format("%d", math.floor(v * 100))
 	end
 	local dragging = false
 	local function upd(i)
 		local px = math.clamp(i.Position.X - track.AbsolutePosition.X, 0, track.AbsoluteSize.X)
 		local pr = px / track.AbsoluteSize.X
-		STYLE[target].Transparency = pr
 		set(pr)
 		cb(pr)
 	end
@@ -322,20 +302,37 @@ RunService.Heartbeat:Connect(function(dt)
 
 			local inRange = false
 			local dist = 0
-			if hrp then
+			if hrp and cam then
 				local dx = hrp.Position.X - camPos.X
 				local dy = hrp.Position.Y - camPos.Y
 				local dz = hrp.Position.Z - camPos.Z
 				local distSq = dx*dx + dy*dy + dz*dz
+
 				if distSq <= cullSq then
 					inRange = true
 					dist = math.floor(math.sqrt(distSq))
+
+					if fovOn then
+						local screenPos, onScreen = cam:WorldToViewportPoint(hrp.Position)
+						if onScreen then
+							local screenCenter = Vector2.new(cam.ViewportSize.X / 2, cam.ViewportSize.Y / 2)
+							local playerScreenPos = Vector2.new(screenPos.X, screenPos.Y)
+							local distFromCenter = (playerScreenPos - screenCenter).Magnitude
+
+							if distFromCenter > (fovSize / 2) then
+								inRange = false
+							end
+						else
+							inRange = false
+						end
+					end
 				end
 			end
 
 			local wantHl = inRange and espOn
 			local wantBeam = inRange and linkOn
 			local wantTag = inRange and (nameOn or hpOn)
+
 			if d.hl and d.hl.Enabled ~= wantHl then d.hl.Enabled = wantHl end
 			if d.footStick and d.footStick.Enabled ~= wantBeam then d.footStick.Enabled = wantBeam end
 			if d.link and d.link.Enabled ~= wantBeam then d.link.Enabled = wantBeam end
@@ -391,13 +388,27 @@ RunService.Heartbeat:Connect(function(dt)
 	if kStroke then kStroke.Color = rainbowColor end
 	if kBtn then kBtn.TextColor3 = rainbowColor end
 	if bannerStroke then bannerStroke.Color = rainbowColor end
+	if fovStroke and fovOn then fovStroke.Color = rainbowColor end
 end)
 
 local function boot()
 	log("boot")
 	gui = N("ScreenGui", { Name = "KyloroxESP", ResetOnSpawn = false, DisplayOrder = 999999999, ZIndexBehavior = Enum.ZIndexBehavior.Sibling }, parent)
-	local MAIN_SIZE = UDim2.new(0, 260, 0, 312)
-	local MAIN_POS = UDim2.new(0.5, -130, 0.5, -156)
+
+	fovCircle = N("Frame", {
+		Name = "FOVCircle",
+		Size = UDim2.new(0, fovSize, 0, fovSize),
+		Position = UDim2.new(0.5, -(fovSize/2), 0.5, -(fovSize/2)),
+		BackgroundTransparency = 1,
+		ZIndex = 1
+	}, gui)
+	local fovCorner = Instance.new("UICorner")
+	fovCorner.CornerRadius = UDim.new(1, 0)
+	fovCorner.Parent = fovCircle
+	fovStroke = N("UIStroke", { Color = rainbowColor, Thickness = 1.5, Transparency = 0.6 }, fovCircle)
+
+	local MAIN_SIZE = UDim2.new(0, 260, 0, 350)
+	local MAIN_POS = UDim2.new(0.5, -130, 0.5, -175)
 
 	main = N("Frame", { Name = "MainFrame", Size = UDim2.new(), Position = UDim2.new(0.5, 0, 0.5, 0), BackgroundColor3 = Color3.fromRGB(22, 22, 26), BackgroundTransparency = 0.15, BorderSizePixel = 0, ClipsDescendants = true, Active = true }, gui)
 	N("UICorner", { CornerRadius = UDim.new(0, 18) }, main)
@@ -423,15 +434,27 @@ local function boot()
 	toggle("Nombre + Distancia", CFG.NAME_ON, function(v) nameOn = v refresh() end)
 	toggle("Barra de Vida", CFG.HP_ON, function(v) hpOn = v refresh() end)
 	toggle("Palitos / Red", CFG.LINK_ON, function(v) linkOn = v refresh() end)
+
+	toggle("Activar FOV (Filtro)", true, function(v)
+		fovOn = v
+		if fovCircle then fovCircle.Visible = fovOn end
+	end)
 	log("toggles ok")
 
 	local sldSet
 	selector(function() if sldSet then sldSet(STYLE[target].Transparency) end refresh() end)
-	sldSet = slider("Transparencia", refresh)
+	sldSet = slider("Transparencia", function(v) STYLE[target].Transparency = v refresh() end)
 	sldSet(STYLE[target].Transparency)
-	log("controles ok")
 
-	particles(main, CFG.PARTICLES)
+	local fovSlider = slider("Tamaño del FOV", function(v)
+		fovSize = 100 + (v * 700)
+		if fovCircle then
+			fovCircle.Size = UDim2.new(0, fovSize, 0, fovSize)
+			fovCircle.Position = UDim2.new(0.5, -(fovSize/2), 0.5, -(fovSize/2))
+		end
+	end)
+	fovSlider(400 / 700)
+	log("controles ok")
 
 	mini = N("Frame", { Size = UDim2.new(0, 140, 0, 40), Position = UDim2.new(0.5, -70, 0.05, 0), BackgroundColor3 = Color3.fromRGB(22, 22, 26), BackgroundTransparency = 0.15, Visible = false, ClipsDescendants = true, Active = true }, gui)
 	N("UICorner", { CornerRadius = UDim.new(0, 16) }, mini)
@@ -482,7 +505,7 @@ local function boot()
 	end)
 
 	minBtn.MouseButton1Click:Connect(function()
-		local t = Tween:Create(main, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { Size = UDim2.new(), Position = UDim2.new(main.Position.X.Scale, main.Position.X.Offset + 130, main.Position.Y.Scale, main.Position.Y.Offset + 156) })
+		local t = Tween:Create(main, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { Size = UDim2.new(), Position = UDim2.new(main.Position.X.Scale, main.Position.X.Offset + 130, main.Position.Y.Scale, main.Position.Y.Offset + 175) })
 		t:Play()
 		t.Completed:Connect(function()
 			main.Visible = false
@@ -507,7 +530,7 @@ local function boot()
 	end)
 
 	closeBtn.MouseButton1Click:Connect(function()
-		local targetPos = UDim2.new(main.Position.X.Scale, main.Position.X.Offset + 107, main.Position.Y.Scale, main.Position.Y.Offset + 133)
+		local targetPos = UDim2.new(main.Position.X.Scale, main.Position.X.Offset + 107, main.Position.Y.Scale, main.Position.Y.Offset + 152)
 		kBtn.Position = targetPos
 		local t = Tween:Create(main, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { Size = UDim2.new(), Position = targetPos })
 		t:Play()
