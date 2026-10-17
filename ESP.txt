@@ -67,7 +67,8 @@ local rainbowColor = Color3.fromHSV(0, 1, 1)
 local esp = {}
 local running = true
 local order = 0
-local gui, main, mini, scroll, loadLbl, kBtn, kStroke, bannerStroke, fovCircle, fovStroke
+local gui, main, scroll, loadLbl, kBtn, kStroke, bannerStroke, fovCircle, fovStroke
+local setFov, setStyle, togglePanel
 
 local myHrp, myTorsoAtt, myLow, myStick
 
@@ -137,22 +138,32 @@ end
 local function toggle(text, default, cb)
 	order = order + 1
 	local row = N("Frame", { Size = UDim2.new(1, 0, 0, 28), BackgroundTransparency = 1, ZIndex = 2, LayoutOrder = order }, scroll)
-	N("TextLabel", { Size = UDim2.new(1, -50, 1, 0), BackgroundTransparency = 1, Text = text, TextColor3 = Color3.fromRGB(210, 210, 220), TextSize = 13, Font = Enum.Font.GothamMedium, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 2 }, row)
+	local lbl = N("TextLabel", { Size = UDim2.new(1, -50, 1, 0), BackgroundTransparency = 1, Text = text, TextColor3 = Color3.fromRGB(210, 210, 220), TextSize = 13, Font = Enum.Font.GothamMedium, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 2 }, row)
+	local onPos = UDim2.new(1, -19, 0.5, -8)
+	local offPos = UDim2.new(0, 3, 0.5, -8)
 	local bg = N("TextButton", { Size = UDim2.new(0, 42, 0, 22), Position = UDim2.new(1, -42, 0.5, -11), BackgroundColor3 = default and GREEN or GREY, Text = "", AutoButtonColor = false, ZIndex = 2 }, row)
 	round(bg)
-	local knob = N("Frame", { Size = UDim2.new(0, 16, 0, 16), Position = UDim2.new(1, -19, 0.5, -8), BackgroundColor3 = WHITE, ZIndex = 2 }, bg)
+	local knob = N("Frame", { Size = UDim2.new(0, 16, 0, 16), Position = default and onPos or offPos, BackgroundColor3 = WHITE, ZIndex = 2 }, bg)
 	round(knob)
 	local st = default
-	bg.MouseButton1Click:Connect(function()
-		st = not st
-		local pos
-		if st then pos = UDim2.new(1, -19, 0.5, -8) else pos = UDim2.new(0, 3, 0.5, -8) end
-		Tween:Create(knob, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Position = pos }):Play()
-		local col
-		if st then col = GREEN else col = GREY end
-		Tween:Create(bg, TweenInfo.new(0.2), { BackgroundColor3 = col }):Play()
-		cb(st)
-	end)
+	local function apply(v)
+		st = v
+		Tween:Create(knob, TweenInfo.new(0.28, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Position = st and onPos or offPos }):Play()
+		Tween:Create(bg, TweenInfo.new(0.2), { BackgroundColor3 = st and GREEN or GREY }):Play()
+		Tween:Create(lbl, TweenInfo.new(0.12), { TextTransparency = 0.35 }):Play()
+		task.delay(0.12, function()
+			if lbl and lbl.Parent then
+				Tween:Create(lbl, TweenInfo.new(0.22), { TextTransparency = 0 }):Play()
+			end
+		end)
+		if cb then cb(st) end
+	end
+	bg.MouseButton1Click:Connect(function() apply(not st) end)
+	if not UIS.TouchEnabled then
+		bg.MouseEnter:Connect(function() Tween:Create(bg, TweenInfo.new(0.15), { BackgroundTransparency = 0.25 }):Play() end)
+		bg.MouseLeave:Connect(function() Tween:Create(bg, TweenInfo.new(0.15), { BackgroundTransparency = 0 }):Play() end)
+	end
+	return apply
 end
 
 local function selector(text, options, default, cb)
@@ -162,17 +173,23 @@ local function selector(text, options, default, cb)
 	local btnRow = N("Frame", { Size = UDim2.new(1, 0, 0, 28), Position = UDim2.new(0, 0, 0, 18), BackgroundTransparency = 1, ZIndex = 2 }, row)
 	N("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, HorizontalAlignment = Enum.HorizontalAlignment.Center, Padding = UDim.new(0, 4) }, btnRow)
 	local btns = {}
+	local function pick(nm)
+		for _, v in pairs(btns) do v.BackgroundColor3 = OFF end
+		if btns[nm] then btns[nm].BackgroundColor3 = Color3.fromRGB(60, 90, 200) end
+		if cb then cb(nm) end
+	end
 	for _, nm in ipairs(options) do
 		local b = N("TextButton", { Size = UDim2.new(0.5, -2, 1, 0), BackgroundColor3 = OFF, Text = nm, TextColor3 = WHITE, TextSize = 11, Font = Enum.Font.GothamBold, ZIndex = 2 }, btnRow)
 		if nm == default then b.BackgroundColor3 = Color3.fromRGB(60, 90, 200) end
 		N("UICorner", { CornerRadius = UDim.new(0, 6) }, b)
-		b.MouseButton1Click:Connect(function()
-			for _, v in pairs(btns) do v.BackgroundColor3 = OFF end
-			b.BackgroundColor3 = Color3.fromRGB(60, 90, 200)
-			cb(nm)
-		end)
+		if not UIS.TouchEnabled then
+			b.MouseEnter:Connect(function() Tween:Create(b, TweenInfo.new(0.15), { BackgroundTransparency = 0.25 }):Play() end)
+			b.MouseLeave:Connect(function() Tween:Create(b, TweenInfo.new(0.15), { BackgroundTransparency = 0 }):Play() end)
+		end
+		b.MouseButton1Click:Connect(function() pick(nm) end)
 		btns[nm] = b
 	end
+	return pick
 end
 
 local function slider(text, cb)
@@ -214,6 +231,12 @@ local function slider(text, cb)
 		end
 	end)
 	return set
+end
+
+local function label(text, color, size)
+	order = order + 1
+	local row = N("Frame", { Size = UDim2.new(1, 0, 0, 18), BackgroundTransparency = 1, ZIndex = 2, LayoutOrder = order }, scroll)
+	N("TextLabel", { Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, Text = text, TextColor3 = color or Color3.fromRGB(170, 170, 185), TextSize = size or 11, Font = Enum.Font.GothamMedium, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 2 }, row)
 end
 
 local function ensureMyRig()
@@ -331,6 +354,7 @@ RunService.Heartbeat:Connect(function(dt)
 
 			local inRange = false
 			local dist = 0
+			local screenDist = nil
 			if hrp and cam then
 				local targetPart = hrp
 				if targetMode == "Cabeza" and ch:FindFirstChild("Head") then
@@ -350,18 +374,20 @@ RunService.Heartbeat:Connect(function(dt)
 						local screenPos, onScreen = cam:WorldToViewportPoint(targetPart.Position)
 						if onScreen then
 							local screenCenter = Vector2.new(cam.ViewportSize.X / 2, cam.ViewportSize.Y / 2)
-							local playerScreenPos = Vector2.new(screenPos.X, screenPos.Y)
-							local distFromCenter = (playerScreenPos - screenCenter).Magnitude
-
-							if distFromCenter > (fovSize / 2) then
+							screenDist = (Vector2.new(screenPos.X, screenPos.Y) - screenCenter).Magnitude
+							if fovOn and screenDist > (fovSize / 2) then
 								inRange = false
-							elseif rmbActive and aimOn and hum and hum.Health > 0 and (not pickScore or distFromCenter < pickScore) and (not aimLos or hasLineOfSight(camPos, targetPart, ch)) then
-								pickScore = distFromCenter
-								aimPick = targetPart
 							end
-						else
+						elseif fovOn then
 							inRange = false
 						end
+					end
+
+					if rmbActive and aimOn and inRange and screenDist and hum and hum.Health > 0
+						and (not pickScore or screenDist < pickScore)
+						and (not aimLos or hasLineOfSight(camPos, targetPart, ch)) then
+						pickScore = screenDist
+						aimPick = targetPart
 					end
 				end
 			end
@@ -425,20 +451,28 @@ RunService.Heartbeat:Connect(function(dt)
 	if kStroke then kStroke.Color = rainbowColor end
 	if kBtn then kBtn.TextColor3 = rainbowColor end
 	if bannerStroke then bannerStroke.Color = rainbowColor end
-	if fovStroke and (fovOn or rmbActive) then fovStroke.Color = rainbowColor end
+	if fovStroke and fovOn then fovStroke.Color = rainbowColor end
 end)
 
 UIS.InputBegan:Connect(function(input, gameProcessed)
-	if not gameProcessed and input.UserInputType == Enum.UserInputType.MouseButton2 then
-		rmbActive = true
-		if fovCircle then fovCircle.Visible = true end
+	if input.UserInputType == Enum.UserInputType.MouseButton2 then
+		if not gameProcessed then rmbActive = true end
+	elseif input.UserInputType == Enum.UserInputType.Keyboard and not gameProcessed then
+		local ctrl = UIS:IsKeyDown(Enum.KeyCode.LeftControl) or UIS:IsKeyDown(Enum.KeyCode.RightControl)
+		if not ctrl then return end
+		if input.KeyCode == Enum.KeyCode.H then
+			if setFov then setFov(not fovOn) end
+		elseif input.KeyCode == Enum.KeyCode.J then
+			if setStyle then setStyle(target == "Relleno" and "Borde" or "Relleno") end
+		elseif input.KeyCode == Enum.KeyCode.X then
+			if togglePanel then togglePanel() end
+		end
 	end
 end)
 UIS.InputEnded:Connect(function(input)
 	if input.UserInputType == Enum.UserInputType.MouseButton2 then
 		rmbActive = false
 		aimPick = nil
-		if fovCircle then fovCircle.Visible = fovOn end
 	end
 end)
 
@@ -464,7 +498,7 @@ local function boot()
 		Size = UDim2.new(0, fovSize, 0, fovSize),
 		Position = UDim2.new(0.5, -(fovSize/2), 0.5, -(fovSize/2)),
 		BackgroundTransparency = 1,
-		Visible = fovOn or rmbActive,
+		Visible = fovOn,
 		ZIndex = 1
 	}, gui)
 	local fovCorner = Instance.new("UICorner")
@@ -475,20 +509,30 @@ local function boot()
 	local MAIN_SIZE = UDim2.new(0, 260, 0, 390)
 	local MAIN_POS = UDim2.new(0.5, -130, 0.5, -195)
 
-	main = N("Frame", { Name = "MainFrame", Size = UDim2.new(), Position = UDim2.new(0.5, 0, 0.5, 0), BackgroundColor3 = Color3.fromRGB(22, 22, 26), BackgroundTransparency = 0.15, BorderSizePixel = 0, ClipsDescendants = true, Active = true }, gui)
+	main = N("Frame", { Name = "MainFrame", Size = UDim2.new(), Position = UDim2.new(0.5, 0, 0.5, 0), BackgroundColor3 = Color3.fromRGB(22, 22, 26), BackgroundTransparency = 1, BorderSizePixel = 0, ClipsDescendants = true, Active = true }, gui)
 	N("UICorner", { CornerRadius = UDim.new(0, 18) }, main)
 	N("UIStroke", { Color = BLUE, Thickness = 1.5, Transparency = 0.2 }, main)
 
+	local function fitScale()
+		local cam = workspace.CurrentCamera
+		local vp = cam and cam.ViewportSize or Vector2.new(1280, 720)
+		local sw = (vp.X - 40) / MAIN_SIZE.X.Offset
+		local sh = (vp.Y - 40) / MAIN_SIZE.Y.Offset
+		return math.clamp(math.min(sw, sh, 1), 0.6, 1)
+	end
+
 	local uiScale = Instance.new("UIScale")
-	uiScale.Scale = UIS.TouchEnabled and 0.85 or 1
+	uiScale.Scale = fitScale()
 	uiScale.Parent = main
 
 	local header = N("Frame", { Size = UDim2.new(1, 0, 0, 40), BackgroundTransparency = 1, ZIndex = 2 }, main)
 	N("TextLabel", { Size = UDim2.new(1, -70, 1, 0), Position = UDim2.new(0, 15, 0, 0), BackgroundTransparency = 1, Text = "Kylorox", TextColor3 = WHITE, TextSize = 14, Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 2 }, header)
-	local minBtn = N("TextButton", { Size = UDim2.new(0, 26, 0, 26), Position = UDim2.new(1, -65, 0, 7), BackgroundColor3 = Color3.fromRGB(35, 35, 42), Text = "-", TextColor3 = Color3.fromRGB(200, 200, 200), TextSize = 12, Font = Enum.Font.GothamBold, ZIndex = 2 }, header)
-	round(minBtn)
 	local closeBtn = N("TextButton", { Size = UDim2.new(0, 26, 0, 26), Position = UDim2.new(1, -33, 0, 7), BackgroundColor3 = RED, Text = "X", TextColor3 = WHITE, TextSize = 12, Font = Enum.Font.GothamBold, ZIndex = 2 }, header)
 	round(closeBtn)
+	if not UIS.TouchEnabled then
+		closeBtn.MouseEnter:Connect(function() Tween:Create(closeBtn, TweenInfo.new(0.15), { BackgroundTransparency = 0.2 }):Play() end)
+		closeBtn.MouseLeave:Connect(function() Tween:Create(closeBtn, TweenInfo.new(0.15), { BackgroundTransparency = 0 }):Play() end)
+	end
 	makeDrag(header, main)
 	log("header ok")
 
@@ -503,9 +547,9 @@ local function boot()
 	toggle("Nombre + Distancia", CFG.NAME_ON, function(v) nameOn = v refresh() end)
 	toggle("Barra de Vida", CFG.HP_ON, function(v) hpOn = v refresh() end)
 	toggle("Palitos / Red", CFG.LINK_ON, function(v) linkOn = v refresh() end)
-	toggle("Filtro FOV (Siempre)", false, function(v)
+	setFov = toggle("FOV", fovOn, function(v)
 		fovOn = v
-		if fovCircle then fovCircle.Visible = fovOn or rmbActive end
+		if fovCircle then fovCircle.Visible = fovOn end
 	end)
 	toggle("Aimbot (Clic Der.)", CFG.AIM_ON, function(v) aimOn = v end)
 	toggle("Solo con visión (LOS)", CFG.AIM_LOS, function(v) aimLos = v end)
@@ -526,7 +570,7 @@ local function boot()
 	log("toggles ok")
 
 	local sldSet
-	selector("Estilo de Caja", {"Relleno", "Borde"}, target, function(v)
+	setStyle = selector("Estilo de Caja", {"Relleno", "Borde"}, target, function(v)
 		target = v
 		if sldSet then sldSet(STYLE[target].Transparency) end
 		refresh()
@@ -545,26 +589,31 @@ local function boot()
 
 	local aimSlider = slider("Suavidad del Aimbot", function(v) aimSpeed = 1 + (v * 19) end)
 	aimSlider((CFG.AIM_SPEED - 1) / 19)
+
+	label("Atajos de teclado", Color3.fromRGB(215, 215, 225), 12)
+	label("Ctrl + H   Mostrar / ocultar FOV")
+	label("Ctrl + J   Relleno / Borde")
+	label("Ctrl + X   Cerrar / abrir panel")
 	log("controles ok")
-
-	mini = N("Frame", { Size = UDim2.new(0, 140, 0, 40), Position = UDim2.new(0.5, -70, 0.05, 0), BackgroundColor3 = Color3.fromRGB(22, 22, 26), BackgroundTransparency = 0.15, Visible = false, ClipsDescendants = true, Active = true }, gui)
-	N("UICorner", { CornerRadius = UDim.new(0, 16) }, mini)
-	N("UIStroke", { Color = BLUE, Thickness = 1.5, Transparency = 0.2 }, mini)
-	N("TextLabel", { Size = UDim2.new(1, -40, 1, 0), Position = UDim2.new(0, 15, 0, 0), BackgroundTransparency = 1, Text = "Kylorox", TextColor3 = WHITE, TextSize = 13, Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 2 }, mini)
-	local maxBtn = N("TextButton", { Size = UDim2.new(0, 26, 0, 26), Position = UDim2.new(1, -32, 0.5, -13), BackgroundColor3 = Color3.fromRGB(40, 40, 50), Text = "[]", TextColor3 = WHITE, TextSize = 12, Font = Enum.Font.GothamBold, ZIndex = 2 }, mini)
-	round(maxBtn)
-	makeDrag(mini, mini)
-
-	local miniScale = Instance.new("UIScale")
-	miniScale.Scale = UIS.TouchEnabled and 0.85 or 1
-	miniScale.Parent = mini
 
 	kBtn = N("TextButton", { Name = "KyloroxK", Size = UDim2.new(0, 46, 0, 46), Position = UDim2.new(0.5, -23, 0.5, -23), BackgroundColor3 = Color3.fromRGB(22, 22, 26), BackgroundTransparency = 0.1, Text = "K", TextColor3 = BLUE, TextSize = 20, Font = Enum.Font.GothamBold, Visible = false, ZIndex = 10 }, gui)
 	round(kBtn)
 	kStroke = N("UIStroke", { Color = BLUE, Thickness = 2, Transparency = 0.15 }, kBtn)
 	makeDrag(kBtn, kBtn)
 
+	local kScale = Instance.new("UIScale")
+	kScale.Scale = uiScale.Scale
+	kScale.Parent = kBtn
+	if workspace.CurrentCamera then
+		workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(function()
+			local s = fitScale()
+			uiScale.Scale = s
+			kScale.Scale = s
+		end)
+	end
+
 	Tween:Create(main, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = MAIN_SIZE, Position = MAIN_POS }):Play()
+	Tween:Create(main, TweenInfo.new(0.45), { BackgroundTransparency = 0.15 }):Play()
 	log("UI visible")
 
 	if not LP.Character then LP.CharacterAdded:Wait() end
@@ -599,60 +648,51 @@ local function boot()
 		end
 	end)
 
-	minBtn.MouseButton1Click:Connect(function()
-		local t = Tween:Create(main, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { Size = UDim2.new(), Position = UDim2.new(main.Position.X.Scale, main.Position.X.Offset + 130, main.Position.Y.Scale, main.Position.Y.Offset + 195) })
-		t:Play()
-		t.Completed:Connect(function()
-			main.Visible = false
-			main.Size = MAIN_SIZE
-			main.Position = MAIN_POS
-			mini.Size = UDim2.new()
-			mini.Visible = true
-			Tween:Create(mini, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = UDim2.new(0, 140, 0, 40) }):Play()
-		end)
-	end)
-	maxBtn.MouseButton1Click:Connect(function()
-		local t = Tween:Create(mini, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { Size = UDim2.new() })
-		t:Play()
-		t.Completed:Connect(function()
-			mini.Visible = false
-			mini.Size = UDim2.new(0, 140, 0, 40)
-			main.Size = UDim2.new()
-			main.Position = MAIN_POS
-			main.Visible = true
-			Tween:Create(main, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = MAIN_SIZE }):Play()
-		end)
-	end)
-
-	closeBtn.MouseButton1Click:Connect(function()
+	local function hidePanel()
 		local targetPos = UDim2.new(main.Position.X.Scale, main.Position.X.Offset + 107, main.Position.Y.Scale, main.Position.Y.Offset + 172)
 		kBtn.Position = targetPos
-		local t = Tween:Create(main, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { Size = UDim2.new(), Position = targetPos })
+		local t = Tween:Create(main, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { Size = UDim2.new(), Position = targetPos, BackgroundTransparency = 1 })
 		t:Play()
 		t.Completed:Connect(function()
 			main.Visible = false
 			main.Size = UDim2.new()
 			main.Position = MAIN_POS
+			main.BackgroundTransparency = 0.15
 			kBtn.Size = UDim2.new()
 			kBtn.Visible = true
 			Tween:Create(kBtn, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = UDim2.new(0, 46, 0, 46) }):Play()
 		end)
-	end)
+	end
+
+	local function showPanel()
+		kBtn.Visible = false
+		main.Position = kBtn.Position
+		main.Size = UDim2.new()
+		main.BackgroundTransparency = 1
+		main.Visible = true
+		Tween:Create(main, TweenInfo.new(0.32, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = MAIN_SIZE, BackgroundTransparency = 0.15 }):Play()
+	end
+
+	closeBtn.MouseButton1Click:Connect(hidePanel)
 
 	local kStart
-	kBtn.InputBegan:Connect(function(i)
+	kBtn.InputBegan:Connect(function()
 		kStart = kBtn.Position
 	end)
 	kBtn.MouseButton1Click:Connect(function()
 		if kStart and (kStart.X.Offset ~= kBtn.Position.X.Offset or kStart.Y.Offset ~= kBtn.Position.Y.Offset or kStart.X.Scale ~= kBtn.Position.X.Scale or kStart.Y.Scale ~= kBtn.Position.Y.Scale) then
 			return
 		end
-		kBtn.Visible = false
-		main.Position = kBtn.Position
-		main.Size = UDim2.new()
-		main.Visible = true
-		Tween:Create(main, TweenInfo.new(0.32, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = MAIN_SIZE }):Play()
+		showPanel()
 	end)
+
+	togglePanel = function()
+		if main.Visible then
+			hidePanel()
+		else
+			showPanel()
+		end
+	end
 	log("TODO LISTO")
 end
 
