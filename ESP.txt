@@ -1,8 +1,7 @@
 local CFG = {
 	BATCH = 0.03, BATCH_SIZE = 25, BATCH_WAIT = 0.25,
 	PARTICLES = 0, PARTICLES_M = 0,
-	MAX_DIST = 150,
-	CULL_DIST = 180,
+	CULL_DIST = 2000,
 	UPDATE_RATE = 0.12,
 	AIM_SPEED = 8,
 	AIM_LOS = true,
@@ -137,9 +136,18 @@ local function hasLineOfSight(from, part, ch)
 	local filter = {}
 	if LP.Character then filter[#filter + 1] = LP.Character end
 	if ch then filter[#filter + 1] = ch end
+	-- La mira en primera persona (viewmodel del arma) suele colgar de la
+	-- camara: si no se excluye, el rayo choca contra el propio rifle y
+	-- nunca hay linea de vision, sobre todo con francotirador.
+	local cam = workspace.CurrentCamera
+	if cam then filter[#filter + 1] = cam end
 	losParams.FilterDescendantsInstances = filter
-	local hit = workspace:Raycast(from, part.Position - from, losParams)
-	return hit == nil
+	local delta = part.Position - from
+	if delta.Magnitude < 0.1 then return true end
+	local hit = workspace:Raycast(from, delta, losParams)
+	if not hit then return true end
+	-- Un impacto pegado al origen es el arma o el propio cañon, no una pared.
+	return (hit.Position - from).Magnitude < 1.5
 end
 
 local function keepOnScreen(frame, w, h)
@@ -204,6 +212,7 @@ local I18N = {
 		border = "Borde",
 		alpha = "Transparencia",
 		fovSize = "Tamaño del FOV",
+		range = "Alcance de detección",
 		smooth = "Suavidad del Aimbot",
 		keys = "Atajos de teclado",
 		pc = "FOR PC",
@@ -241,6 +250,7 @@ local I18N = {
 		border = "Border",
 		alpha = "Transparency",
 		fovSize = "FOV size",
+		range = "Detection range",
 		smooth = "Aimbot smoothness",
 		keys = "Keyboard shortcuts",
 		pc = "FOR PC",
@@ -534,7 +544,7 @@ local function setupChar(pl, ch)
 		d.tagOffset = Vector3.new(0, 3.4, 0)
 	end
 
-	d.tag = N("BillboardGui", { Name = "EK_Tag", Size = UDim2.new(0, 160, 0, 48), StudsOffsetWorldSpace = d.tagOffset, AlwaysOnTop = true, LightInfluence = false, MaxDistance = CFG.MAX_DIST, Adornee = targetPart, Enabled = false }, targetPart)
+	d.tag = N("BillboardGui", { Name = "EK_Tag", Size = UDim2.new(0, 160, 0, 48), StudsOffsetWorldSpace = d.tagOffset, AlwaysOnTop = true, LightInfluence = false, MaxDistance = CFG.CULL_DIST, Adornee = targetPart, Enabled = false }, targetPart)
 	d.name = N("TextLabel", { Size = UDim2.new(1, 0, 0, 18), BackgroundTransparency = 1, Text = pl.Name, TextColor3 = WHITE, TextStrokeColor3 = Color3.new(0, 0, 0), TextStrokeTransparency = 0.4, Font = Enum.Font.GothamBold, TextSize = 14, Visible = nameOn }, d.tag)
 	d.dist = N("TextLabel", { Size = UDim2.new(1, 0, 0, 14), Position = UDim2.new(0, 0, 0, 18), BackgroundTransparency = 1, Text = "0 studs", TextColor3 = BLUE, TextStrokeColor3 = Color3.new(0, 0, 0), TextStrokeTransparency = 0.4, Font = Enum.Font.GothamMedium, TextSize = 12, Visible = nameOn }, d.tag)
 
@@ -1018,6 +1028,17 @@ local function boot()
 		end
 	end)
 	fovSlider((400 - 100) / 700)
+
+	local rangeSlider = slider("range", function(v)
+		local d = math.floor(200 + v * 2800)
+		CFG.CULL_DIST = d
+		for _, e in pairs(esp) do
+			if e.tag then e.tag.MaxDistance = d end
+		end
+	end, function(v)
+		return T("range") .. ": " .. math.floor(200 + v * 2800) .. " studs"
+	end)
+	rangeSlider((CFG.CULL_DIST - 200) / 2800)
 
 	local aimSlider = slider("smooth", function(v) aimSpeed = 1 + (v * 19) end)
 	aimSlider((CFG.AIM_SPEED - 1) / 19)
