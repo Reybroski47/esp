@@ -8,6 +8,7 @@ local CFG = {
 	AIM_LOS = true,
 	LOCKFOV = false,
 	LOCK_SPEED = 55,
+	AIMKEY_SPEED = 90,
 	AUTO = true,
 	AUTO_WAIT = 25,
 	RAINBOW_SPEED = 0.35,
@@ -216,7 +217,7 @@ local I18N = {
 		hold = "Mantener",
 		toggle = "Alternar",
 		pressKey = "presiona...",
-		aimOn = "AIMFOV activo: apuntando solo",
+		aimOn = "AIMFOV activo: pegada a la cabeza",
 		aimOff = "AIMFOV apagado",
 	},
 	en = {
@@ -253,7 +254,7 @@ local I18N = {
 		hold = "Hold",
 		toggle = "Toggle",
 		pressKey = "press...",
-		aimOn = "AIMFOV active: aiming by itself",
+		aimOn = "AIMFOV active: glued to the head",
 		aimOff = "AIMFOV off",
 	},
 }
@@ -587,18 +588,31 @@ RunService.Heartbeat:Connect(function(dt)
 	local pickScore = nil
 	local locked = aimPick
 	local lockOk = false
-	if locked and cam and locked.Parent then
-		local lockHum = locked.Parent:FindFirstChildOfClass("Humanoid")
-		local lx = locked.Position.X - camPos.X
-		local ly = locked.Position.Y - camPos.Y
-		local lz = locked.Position.Z - camPos.Z
-		if lockHum and lockHum.Health > 0 and (lx*lx + ly*ly + lz*lz) <= cullSq then
-			local sp, onScreen = cam:WorldToViewportPoint(locked.Position)
-			if onScreen then
-				local sc = Vector2.new(cam.ViewportSize.X / 2, cam.ViewportSize.Y / 2)
-				local sd = (Vector2.new(sp.X, sp.Y) - sc).Magnitude
-				if (not (fovOn or lockFov or aimKeyOn) or sd <= (fovSize / 2)) and (not aimLos or hasLineOfSight(camPos, locked, locked.Parent)) then
-					lockOk = true
+	-- AIMFOV: una vez que engancha una cabeza no la suelta aunque se vaya del
+	-- circulo, quede detras de una pared o salga de pantalla. Solo se suelta
+	-- apagando la tecla, muriendo el rival o desapareciendo su personaje.
+	local hardLock = aimKeyOn
+	if locked and locked.Parent then
+		local lch = locked.Parent
+		local lockHum = lch:FindFirstChildOfClass("Humanoid")
+		if lockHum and lockHum.Health > 0 then
+			if hardLock then
+				lockOk = true
+				local lhead = lch:FindFirstChild("Head")
+				if lhead then locked = lhead end
+			elseif cam then
+				local lx = locked.Position.X - camPos.X
+				local ly = locked.Position.Y - camPos.Y
+				local lz = locked.Position.Z - camPos.Z
+				if (lx*lx + ly*ly + lz*lz) <= cullSq then
+					local sp, onScreen = cam:WorldToViewportPoint(locked.Position)
+					if onScreen then
+						local sc = Vector2.new(cam.ViewportSize.X / 2, cam.ViewportSize.Y / 2)
+						local sd = (Vector2.new(sp.X, sp.Y) - sc).Magnitude
+						if (not (fovOn or lockFov) or sd <= (fovSize / 2)) and (not aimLos or hasLineOfSight(camPos, locked, locked.Parent)) then
+							lockOk = true
+						end
+					end
 				end
 			end
 		end
@@ -621,7 +635,7 @@ RunService.Heartbeat:Connect(function(dt)
 			local screenDist = nil
 			if hrp and cam then
 				local targetPart = hrp
-				if targetMode == "head" and ch:FindFirstChild("Head") then
+				if (targetMode == "head" or aimKeyOn) and ch:FindFirstChild("Head") then
 					targetPart = ch.Head
 				end
 
@@ -648,7 +662,7 @@ RunService.Heartbeat:Connect(function(dt)
 					end
 
 					local aimPart = targetPart
-					if lockFov then
+					if lockFov or aimKeyOn then
 						local head = ch:FindFirstChild("Head")
 						if head then aimPart = head end
 					end
@@ -805,13 +819,15 @@ RunService:BindToRenderStep("KyloroxAim", Enum.RenderPriority.Camera.Value + 1, 
 	local part = aimPick
 	if not cam or not part or not part.Parent then return end
 	local to = part.Position
-	if lockFov then
-		local head = part.Parent:FindFirstChild("Head")
+	if lockFov or aimKeyOn then
+		local head = part.Parent and part.Parent:FindFirstChild("Head")
 		if head then to = head.Position end
 	end
 	local from = cam.CFrame.Position
 	if (to - from).Magnitude < 0.1 then return end
-	local speed = lockFov and CFG.LOCK_SPEED or aimSpeed
+	local speed = aimSpeed
+	if lockFov then speed = math.max(speed, CFG.LOCK_SPEED) end
+	if aimKeyOn then speed = math.max(speed, CFG.AIMKEY_SPEED) end
 	cam.CFrame = cam.CFrame:Lerp(CFrame.lookAt(from, to), 1 - math.exp(-speed * dt))
 end)
 
