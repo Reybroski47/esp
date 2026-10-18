@@ -6,16 +6,31 @@ local CFG = {
 	UPDATE_RATE = 0.12,
 	AIM_SPEED = 8,
 	AIM_LOS = true,
+	LOCKFOV = false,
+	LOCK_SPEED = 55,
+	AUTO = true,
+	AUTO_WAIT = 25,
 	RAINBOW_SPEED = 0.35,
 	RAINBOW_HZ = 0.15,
 	DROP = 7, XRAY_Z = -5,
+	AIMKEY = "toggle",
 	ESP_ON = true, NAME_ON = true, HP_ON = true, LINK_ON = false
+}
+
+-- Atajos reasignables. Los usa el panel FOR PC.
+local KEYBINDS = {
+	fov = { key = Enum.KeyCode.H, ctrl = true, shift = false, alt = false },
+	lock = { key = Enum.KeyCode.K, ctrl = true, shift = false, alt = false },
+	style = { key = Enum.KeyCode.J, ctrl = true, shift = false, alt = false },
+	panel = { key = Enum.KeyCode.X, ctrl = true, shift = false, alt = false },
+	aimfov = { key = Enum.KeyCode.Q, ctrl = false, shift = false, alt = false },
 }
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
 local Tween = game:GetService("TweenService")
+local TeleportService = game:GetService("TeleportService")
 local LP = Players.LocalPlayer
 
 local function log(m) print("[Kylorox] " .. tostring(m)) end
@@ -59,6 +74,21 @@ local fovOn = false
 local rmbActive = false
 local aimSpeed = CFG.AIM_SPEED
 local aimLos = CFG.AIM_LOS
+local lockFov = CFG.LOCKFOV
+local autoOn = CFG.AUTO
+local autoWait = CFG.AUTO_WAIT
+local rivalCount = 0
+local lastRivalAt = tick()
+local hopBackoff = 1
+local hopping = false
+local autoStatusLbl
+local aimKeyOn = false
+local aimKeyLatched = false
+local aimStateLbl
+local aimKeyMode = CFG.AIMKEY
+local listening = nil
+local keyRows = {}
+local refreshKeys
 local aimPick = nil
 local fovSize = 400
 local hue = 0
@@ -67,7 +97,7 @@ local esp = {}
 local running = true
 local order = 0
 local gui, main, scroll, loadLbl, kBtn, kStroke, bannerStroke, fovCircle, fovStroke
-local setFov, setStyle, togglePanel
+local setFov, setStyle, togglePanel, setLockFov, updateFovVis
 
 local myHrp, myTorsoAtt, myLow, myStick
 
@@ -159,6 +189,12 @@ local I18N = {
 		lines = "Líneas entre personas",
 		fov = "FOV / Aimbot",
 		los = "Solo con visión (LOS)",
+		lockfov = "LOCKFOV (snap a la cabeza)",
+		auto = "Auto: buscar rivales",
+		autoWait = "Espera sin rivales",
+		autoState = "Rivales",
+		autoHop = "buscando partida...",
+		autoOff = "APAGADO",
 		mode = "¿A qué apuntar?",
 		head = "Cabeza",
 		torso = "Torso",
@@ -169,9 +205,19 @@ local I18N = {
 		fovSize = "Tamaño del FOV",
 		smooth = "Suavidad del Aimbot",
 		keys = "Atajos de teclado",
-		kFov = "Ctrl + H   Mostrar / ocultar FOV",
-		kStyle = "Ctrl + J   Relleno / Borde",
-		kPanel = "Ctrl + X   Cerrar / abrir panel",
+		pc = "FOR PC",
+		pcHint = "Toca un botón y aprieta la nueva tecla. Esc cancela, Supr borra.",
+		kFov = "Mostrar / ocultar FOV",
+		kLock = "LOCKFOV (snap cabeza)",
+		kStyle = "Relleno / Borde",
+		kPanel = "Cerrar / abrir panel",
+		kAimFov = "AIMFOV (sin clic)",
+		aimMode = "Cómo usar AIMFOV",
+		hold = "Mantener",
+		toggle = "Alternar",
+		pressKey = "presiona...",
+		aimOn = "AIMFOV activo: apuntando solo",
+		aimOff = "AIMFOV apagado",
 	},
 	en = {
 		esp = "ESP Visual",
@@ -180,6 +226,12 @@ local I18N = {
 		lines = "Lines between players",
 		fov = "FOV / Aimbot",
 		los = "Line of sight only",
+		lockfov = "LOCKFOV (hard head snap)",
+		auto = "Auto: hunt rivals",
+		autoWait = "Wait with no rivals",
+		autoState = "Rivals",
+		autoHop = "searching match...",
+		autoOff = "OFF",
 		mode = "Aim at?",
 		head = "Head",
 		torso = "Torso",
@@ -190,9 +242,19 @@ local I18N = {
 		fovSize = "FOV size",
 		smooth = "Aimbot smoothness",
 		keys = "Keyboard shortcuts",
-		kFov = "Ctrl + H   Show / hide FOV",
-		kStyle = "Ctrl + J   Fill / Border",
-		kPanel = "Ctrl + X   Close / open panel",
+		pc = "FOR PC",
+		pcHint = "Tap a button and press the new key. Esc cancels, Del clears.",
+		kFov = "Show / hide FOV",
+		kLock = "LOCKFOV (head snap)",
+		kStyle = "Fill / Border",
+		kPanel = "Close / open panel",
+		kAimFov = "AIMFOV (no right click)",
+		aimMode = "How AIMFOV works",
+		hold = "Hold",
+		toggle = "Toggle",
+		pressKey = "press...",
+		aimOn = "AIMFOV active: aiming by itself",
+		aimOff = "AIMFOV off",
 	},
 }
 local lang = "es"
@@ -207,6 +269,53 @@ local function applyLang()
 	for _, fn in ipairs(translatable) do
 		fn()
 	end
+end
+
+local function isModifier(code)
+	return code == Enum.KeyCode.LeftControl or code == Enum.KeyCode.RightControl
+		or code == Enum.KeyCode.LeftShift or code == Enum.KeyCode.RightShift
+		or code == Enum.KeyCode.LeftAlt or code == Enum.KeyCode.RightAlt
+end
+
+local function modsNow()
+	local ctrl = UIS:IsKeyDown(Enum.KeyCode.LeftControl) or UIS:IsKeyDown(Enum.KeyCode.RightControl)
+	local shift = UIS:IsKeyDown(Enum.KeyCode.LeftShift) or UIS:IsKeyDown(Enum.KeyCode.RightShift)
+	local alt = UIS:IsKeyDown(Enum.KeyCode.LeftAlt) or UIS:IsKeyDown(Enum.KeyCode.RightAlt)
+	return ctrl, shift, alt
+end
+
+local function keyText(b)
+	if not b or not b.key then return "—" end
+	return (b.ctrl and "Ctrl + " or "") .. (b.shift and "Shift + " or "") .. (b.alt and "Alt + " or "") .. b.key.Name
+end
+
+local function keyDown(b, input)
+	if not b or not b.key or input.KeyCode ~= b.key then return false end
+	local ctrl, shift, alt = modsNow()
+	return (b.ctrl and ctrl or (not b.ctrl and not ctrl))
+		and (b.shift and shift or (not b.shift and not shift))
+		and (b.alt and alt or (not b.alt and not alt))
+end
+
+local function aimEngaged()
+	return aimKeyOn or (rmbActive and (fovOn or lockFov))
+end
+
+updateFovVis = function()
+	if fovCircle then fovCircle.Visible = fovOn or lockFov or aimKeyOn end
+	if fovStroke then fovStroke.Thickness = (lockFov or aimKeyOn) and 3 or 1.5 end
+	if aimStateLbl then
+		aimStateLbl.Text = aimKeyOn and T("aimOn") or T("aimOff")
+		aimStateLbl.TextColor3 = aimKeyOn and Color3.fromRGB(110, 235, 150) or Color3.fromRGB(150, 150, 165)
+	end
+end
+
+local function autoStatusText()
+	if not autoOn then return T("autoState") .. ": " .. T("autoOff") end
+	if hopping then return T("autoState") .. ": " .. T("autoHop") end
+	local wait = math.max(1, math.floor(autoWait * hopBackoff))
+	local left = math.max(0, math.ceil(wait - (tick() - lastRivalAt)))
+	return T("autoState") .. ": " .. rivalCount .. "  ·  " .. left .. "s"
 end
 
 local function toggle(key, default, cb)
@@ -271,7 +380,7 @@ local function selector(key, options, default, cb)
 	return pick
 end
 
-local function slider(key, cb)
+local function slider(key, cb, fmt)
 	order = order + 1
 	local row = N("Frame", { Size = UDim2.new(1, 0, 0, 40), BackgroundTransparency = 1, ZIndex = 2, LayoutOrder = order }, scroll)
 	local lbl = N("TextLabel", { Size = UDim2.new(1, 0, 0, 15), BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(180, 180, 190), TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 2 }, row)
@@ -282,15 +391,16 @@ local function slider(key, cb)
 	local knob = N("Frame", { Size = UDim2.new(0, 14, 0, 14), Position = UDim2.new(1, -7, 0.5, -7), BackgroundColor3 = WHITE, ZIndex = 2 }, fill)
 	round(knob)
 	local cur = 0
+	local function paint()
+		lbl.Text = fmt and fmt(cur) or (T(key) .. ": " .. string.format("%d", math.floor(cur * 100)))
+	end
 	local function set(v)
 		v = math.clamp(v, 0, 1)
 		cur = v
 		fill.Size = UDim2.new(v, 0, 1, 0)
-		lbl.Text = T(key) .. ": " .. string.format("%d", math.floor(v * 100))
+		paint()
 	end
-	translatable[#translatable + 1] = function()
-		lbl.Text = T(key) .. ": " .. string.format("%d", math.floor(cur * 100))
-	end
+	translatable[#translatable + 1] = paint
 	local dragging = false
 	local function upd(i)
 		local px = math.clamp(i.Position.X - track.AbsolutePosition.X, 0, track.AbsoluteSize.X)
@@ -317,11 +427,62 @@ local function slider(key, cb)
 	return set
 end
 
-local function label(key, color, size)
+local function label(key, color, size, dynamic, wrap)
 	order = order + 1
-	local row = N("Frame", { Size = UDim2.new(1, 0, 0, 18), BackgroundTransparency = 1, ZIndex = 2, LayoutOrder = order }, scroll)
-	local lbl = N("TextLabel", { Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, Text = T(key), TextColor3 = color or Color3.fromRGB(170, 170, 185), TextSize = size or 11, Font = Enum.Font.GothamMedium, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 2 }, row)
-	translatable[#translatable + 1] = function() lbl.Text = T(key) end
+	local row = N("Frame", { Size = UDim2.new(1, 0, 0, wrap and 30 or 18), BackgroundTransparency = 1, ZIndex = 2, LayoutOrder = order }, scroll)
+	local lbl = N("TextLabel", { Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, TextColor3 = color or Color3.fromRGB(170, 170, 185), TextSize = size or 11, Font = Enum.Font.GothamMedium, TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top, TextWrapped = wrap or false, ZIndex = 2 }, row)
+	local function paint()
+		lbl.Text = dynamic and dynamic() or T(key)
+	end
+	paint()
+	translatable[#translatable + 1] = paint
+	return lbl
+end
+
+refreshKeys = function()
+	for id, row in pairs(keyRows) do
+		local b = KEYBINDS[id]
+		if listening == id then
+			row.btn.Text = T("pressKey")
+			row.btn.BackgroundColor3 = Color3.fromRGB(60, 90, 200)
+		else
+			row.btn.Text = keyText(b)
+			row.btn.BackgroundColor3 = (b and b.key) and OFF or Color3.fromRGB(75, 40, 40)
+		end
+	end
+end
+
+local function bindKey(id, key, ctrl, shift, alt)
+	for other, b in pairs(KEYBINDS) do
+		if other ~= id and b.key == key and b.ctrl == ctrl and b.shift == shift and b.alt == alt then
+			b.key = nil
+		end
+	end
+	KEYBINDS[id] = { key = key, ctrl = ctrl, shift = shift, alt = alt }
+	listening = nil
+	refreshKeys()
+end
+
+local function keybind(id, labelKey, tint)
+	order = order + 1
+	local row = N("Frame", { Size = UDim2.new(1, 0, 0, 26), BackgroundTransparency = 1, ZIndex = 2, LayoutOrder = order }, scroll)
+	local lbl = N("TextLabel", { Size = UDim2.new(1, -92, 1, 0), BackgroundTransparency = 1, Text = T(labelKey), TextColor3 = tint or Color3.fromRGB(200, 200, 212), TextSize = 11, Font = Enum.Font.GothamMedium, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 2 }, row)
+	local btn = N("TextButton", { Size = UDim2.new(0, 88, 1, -4), Position = UDim2.new(1, -88, 0, 2), BackgroundColor3 = OFF, Text = "", TextColor3 = WHITE, TextSize = 11, Font = Enum.Font.GothamBold, AutoButtonColor = false, ZIndex = 2 }, row)
+	round(btn)
+	if not UIS.TouchEnabled then
+		btn.MouseEnter:Connect(function() Tween:Create(btn, TweenInfo.new(0.15), { BackgroundTransparency = 0.25 }):Play() end)
+		btn.MouseLeave:Connect(function() Tween:Create(btn, TweenInfo.new(0.15), { BackgroundTransparency = 0 }):Play() end)
+	end
+	btn.MouseButton1Click:Connect(function()
+		listening = (listening == id) and nil or id
+		refreshKeys()
+	end)
+	translatable[#translatable + 1] = function()
+		lbl.Text = T(labelKey)
+		refreshKeys()
+	end
+	keyRows[id] = { btn = btn }
+	refreshKeys()
 end
 
 local function ensureMyRig()
@@ -436,7 +597,7 @@ RunService.Heartbeat:Connect(function(dt)
 			if onScreen then
 				local sc = Vector2.new(cam.ViewportSize.X / 2, cam.ViewportSize.Y / 2)
 				local sd = (Vector2.new(sp.X, sp.Y) - sc).Magnitude
-				if (not fovOn or sd <= (fovSize / 2)) and (not aimLos or hasLineOfSight(camPos, locked, locked.Parent)) then
+				if (not (fovOn or lockFov or aimKeyOn) or sd <= (fovSize / 2)) and (not aimLos or hasLineOfSight(camPos, locked, locked.Parent)) then
 					lockOk = true
 				end
 			end
@@ -473,7 +634,7 @@ RunService.Heartbeat:Connect(function(dt)
 					inRange = true
 					dist = math.floor(math.sqrt(distSq))
 
-					if fovOn or rmbActive then
+					if fovOn or rmbActive or aimKeyOn then
 						local screenPos, onScreen = cam:WorldToViewportPoint(targetPart.Position)
 						if onScreen then
 							local screenCenter = Vector2.new(cam.ViewportSize.X / 2, cam.ViewportSize.Y / 2)
@@ -486,11 +647,19 @@ RunService.Heartbeat:Connect(function(dt)
 						end
 					end
 
-					if not lockOk and rmbActive and fovOn and inRange and screenDist and hum and hum.Health > 0
+					local aimPart = targetPart
+					if lockFov then
+						local head = ch:FindFirstChild("Head")
+						if head then aimPart = head end
+					end
+
+					local canAim = aimEngaged() and inRange and screenDist and hum and hum.Health > 0
+					if canAim and screenDist > (fovSize / 2) then canAim = false end
+					if not lockOk and canAim
 						and (not pickScore or screenDist < pickScore)
-						and (not aimLos or hasLineOfSight(camPos, targetPart, ch)) then
+						and (not aimLos or hasLineOfSight(camPos, aimPart, ch)) then
 						pickScore = screenDist
-						aimPick = targetPart
+						aimPick = aimPart
 					end
 				end
 			end
@@ -554,42 +723,143 @@ RunService.Heartbeat:Connect(function(dt)
 	if kStroke then kStroke.Color = rainbowColor end
 	if kBtn then kBtn.TextColor3 = rainbowColor end
 	if bannerStroke then bannerStroke.Color = rainbowColor end
-	if fovStroke and fovOn then fovStroke.Color = rainbowColor end
+	if fovStroke and (fovOn or aimKeyOn) then fovStroke.Color = rainbowColor end
 end)
 
 UIS.InputBegan:Connect(function(input, gameProcessed)
 	if input.UserInputType == Enum.UserInputType.MouseButton2 then
 		if not gameProcessed then rmbActive = true end
-	elseif input.UserInputType == Enum.UserInputType.Keyboard and not gameProcessed then
-		local ctrl = UIS:IsKeyDown(Enum.KeyCode.LeftControl) or UIS:IsKeyDown(Enum.KeyCode.RightControl)
-		if not ctrl then return end
-		if input.KeyCode == Enum.KeyCode.H then
-			if setFov then setFov(not fovOn) end
-		elseif input.KeyCode == Enum.KeyCode.J then
-			if setStyle then setStyle(target == "fill" and "border" or "fill") end
-		elseif input.KeyCode == Enum.KeyCode.X then
-			if togglePanel then togglePanel() end
+		return
+	end
+	if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+
+	-- Reasignando un atajo: la próxima tecla (con sus modificadores) queda como combo.
+	if listening then
+		if input.KeyCode == Enum.KeyCode.Escape then
+			listening = nil
+			refreshKeys()
+			return
 		end
+		if gameProcessed then return end
+		if input.KeyCode == Enum.KeyCode.Backspace or input.KeyCode == Enum.KeyCode.Delete then
+			bindKey(listening, nil, false, false, false)
+			return
+		end
+		if isModifier(input.KeyCode) then return end
+		local ctrl, shift, alt = modsNow()
+		bindKey(listening, input.KeyCode, ctrl, shift, alt)
+		return
+	end
+
+	if gameProcessed then return end
+
+	if keyDown(KEYBINDS.aimfov, input) then
+		if aimKeyMode == "toggle" then
+			if not aimKeyLatched then
+				aimKeyLatched = true
+				aimKeyOn = not aimKeyOn
+			end
+		else
+			aimKeyOn = true
+		end
+		aimPick = nil
+		updateFovVis()
+		return
+	end
+
+	if keyDown(KEYBINDS.fov, input) then
+		if setFov then setFov(not fovOn) end
+	elseif keyDown(KEYBINDS.lock, input) then
+		if setLockFov then setLockFov(not lockFov) end
+	elseif keyDown(KEYBINDS.style, input) then
+		if setStyle then setStyle(target == "fill" and "border" or "fill") end
+	elseif keyDown(KEYBINDS.panel, input) then
+		if togglePanel then togglePanel() end
 	end
 end)
 UIS.InputEnded:Connect(function(input)
 	if input.UserInputType == Enum.UserInputType.MouseButton2 then
 		rmbActive = false
 		aimPick = nil
+	elseif input.UserInputType == Enum.UserInputType.Keyboard then
+		local ab = KEYBINDS.aimfov
+		if ab and ab.key and input.KeyCode == ab.key then
+			aimKeyLatched = false
+		end
+		-- En modo mantener se suelta con la tecla o con el modificador (Ctrl/Shift/Alt).
+		if aimKeyMode ~= "toggle" and aimKeyOn and ab and ab.key then
+			if input.KeyCode == ab.key or isModifier(input.KeyCode) then
+				aimKeyOn = false
+				aimPick = nil
+				updateFovVis()
+			end
+		end
 	end
 end)
 
 pcall(function() RunService:UnbindFromRenderStep("KyloroxAim") end)
 RunService:BindToRenderStep("KyloroxAim", Enum.RenderPriority.Camera.Value + 1, function(dt)
 	if not running or not gui or not gui.Parent then return end
-	if not (rmbActive and fovOn and aimPick) then return end
+	if not (aimEngaged() and aimPick) then return end
 	local cam = workspace.CurrentCamera
 	local part = aimPick
 	if not cam or not part or not part.Parent then return end
-	local from = cam.CFrame.Position
 	local to = part.Position
+	if lockFov then
+		local head = part.Parent:FindFirstChild("Head")
+		if head then to = head.Position end
+	end
+	local from = cam.CFrame.Position
 	if (to - from).Magnitude < 0.1 then return end
-	cam.CFrame = cam.CFrame:Lerp(CFrame.lookAt(from, to), 1 - math.exp(-aimSpeed * dt))
+	local speed = lockFov and CFG.LOCK_SPEED or aimSpeed
+	cam.CFrame = cam.CFrame:Lerp(CFrame.lookAt(from, to), 1 - math.exp(-speed * dt))
+end)
+
+local function countRivals()
+	local n = 0
+	for _, pl in ipairs(Players:GetPlayers()) do
+		if pl ~= LP then n = n + 1 end
+	end
+	return n
+end
+
+local function hopServer()
+	if hopping then return end
+	hopping = true
+	log("sin rivales: entrando a otra partida")
+	local sent = false
+	local ok = pcall(function()
+		local opts = Instance.new("TeleportOptions")
+		opts.ShouldReserveServer = false
+		TeleportService:TeleportAsync(game.PlaceId, { LP }, opts)
+		sent = true
+	end)
+	if not (ok and sent) then
+		pcall(function() TeleportService:Teleport(game.PlaceId, LP) end)
+	end
+	task.wait(8)
+	hopping = false
+end
+
+task.spawn(function()
+	while running do
+		task.wait(1)
+		rivalCount = countRivals()
+		if rivalCount > 0 then
+			lastRivalAt = tick()
+			hopBackoff = 1
+		end
+		if autoStatusLbl and autoStatusLbl.Parent then
+			autoStatusLbl.Text = autoStatusText()
+			autoStatusLbl.TextColor3 = not autoOn and Color3.fromRGB(150, 150, 165)
+				or (rivalCount > 0 and Color3.fromRGB(110, 235, 150) or Color3.fromRGB(255, 175, 90))
+		end
+		if autoOn and not hopping and rivalCount == 0 and (tick() - lastRivalAt) >= (autoWait * hopBackoff) then
+			lastRivalAt = tick()
+			hopBackoff = math.min(hopBackoff * 1.6, 6)
+			hopServer()
+		end
+	end
 end)
 
 local function boot()
@@ -601,13 +871,14 @@ local function boot()
 		Size = UDim2.new(0, fovSize, 0, fovSize),
 		Position = UDim2.new(0.5, -(fovSize/2), 0.5, -(fovSize/2)),
 		BackgroundTransparency = 1,
-		Visible = fovOn,
+		Visible = fovOn or CFG.LOCKFOV,
 		ZIndex = 1
 	}, gui)
 	local fovCorner = Instance.new("UICorner")
 	fovCorner.CornerRadius = UDim.new(1, 0)
 	fovCorner.Parent = fovCircle
-	fovStroke = N("UIStroke", { Color = rainbowColor, Thickness = 1.5, Transparency = 0.6 }, fovCircle)
+	fovStroke = N("UIStroke", { Color = rainbowColor, Thickness = CFG.LOCKFOV and 3 or 1.5, Transparency = 0.6 }, fovCircle)
+	updateFovVis()
 
 	local MAIN_SIZE = UDim2.new(0, 260, 0, 390)
 	local MAIN_POS = UDim2.new(0.5, -130, 0.5, -195)
@@ -675,9 +946,28 @@ local function boot()
 	setFov = toggle("fov", fovOn, function(v)
 		fovOn = v
 		if not v then aimPick = nil end
-		if fovCircle then fovCircle.Visible = fovOn end
+		updateFovVis()
+	end)
+	setLockFov = toggle("lockfov", CFG.LOCKFOV, function(v)
+		lockFov = v
+		aimPick = nil
+		updateFovVis()
 	end)
 	toggle("los", CFG.AIM_LOS, function(v) aimLos = v end)
+	toggle("auto", CFG.AUTO, function(v)
+		autoOn = v
+		lastRivalAt = tick()
+		if autoStatusLbl then autoStatusLbl.Text = autoStatusText() end
+	end)
+
+	local autoSlider = slider("autoWait", function(v)
+		autoWait = 10 + math.floor(v * 110 + 0.5)
+	end, function(v)
+		return T("autoWait") .. ": " .. (10 + math.floor(v * 110 + 0.5)) .. "s"
+	end)
+	autoSlider((CFG.AUTO_WAIT - 10) / 110)
+
+	autoStatusLbl = label("autoState", Color3.fromRGB(150, 150, 165), 11, autoStatusText)
 
 	selector("mode", {"head", "torso"}, targetMode, function(v)
 		targetMode = v
@@ -716,10 +1006,25 @@ local function boot()
 	local aimSlider = slider("smooth", function(v) aimSpeed = 1 + (v * 19) end)
 	aimSlider((CFG.AIM_SPEED - 1) / 19)
 
-	label("keys", Color3.fromRGB(215, 215, 225), 12)
-	label("kFov")
-	label("kStyle")
-	label("kPanel")
+	label("pc", Color3.fromRGB(215, 215, 225), 12)
+	keybind("fov", "kFov")
+	keybind("lock", "kLock")
+	keybind("style", "kStyle")
+	keybind("panel", "kPanel")
+	keybind("aimfov", "kAimFov", Color3.fromRGB(255, 200, 90))
+	aimStateLbl = label(nil, Color3.fromRGB(150, 150, 165), 10, function()
+		return aimKeyOn and T("aimOn") or T("aimOff")
+	end)
+	updateFovVis()
+	selector("aimMode", {"hold", "toggle"}, aimKeyMode, function(v)
+		aimKeyMode = v
+		aimKeyLatched = false
+		if v == "hold" then
+			aimKeyOn = false
+		end
+		updateFovVis()
+	end)
+	label("pcHint", Color3.fromRGB(150, 150, 165), 10, nil, true)
 	log("controles ok")
 
 	kBtn = N("TextButton", { Name = "KyloroxK", Size = UDim2.new(0, 46, 0, 46), Position = UDim2.new(0.5, -23, 0.5, -23), BackgroundColor3 = Color3.fromRGB(22, 22, 26), BackgroundTransparency = 0.1, Text = "K", TextColor3 = BLUE, TextSize = 20, Font = Enum.Font.GothamBold, Visible = false, ZIndex = 10 }, gui)
